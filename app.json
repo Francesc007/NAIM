@@ -3,6 +3,7 @@
     "name": "guardarropa-app",
     "slug": "guardarropa-app",
     "version": "1.0.0",
+    "sdkVersion": "54.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -25,6 +26,28 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "NAIM usa tu ubicación para mostrarte el clima y sugerencias de outfit.",
+          "locationAlwaysAndWhenInUsePermission": "NAIM usa tu ubicación para mostrarte el clima y sugerencias de outfit."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "colors": {
+            "cropBackgroundColor": "#F8F9FA",
+            "cropToolbarColor": "#DDBEA9",
+            "cropToolbarIconColor": "#212529",
+            "cropToolbarActionTextColor": "#212529",
+            "cropBackButtonIconColor": "#212529"
+          }
+        }
+      ]
+    ]
   }
 }
