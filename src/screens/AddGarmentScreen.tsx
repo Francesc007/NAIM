@@ -22,7 +22,11 @@ import { ExpandableSelector } from '../components/ExpandableSelector';
 import { StackBottomNav } from '../components/StackBottomNav';
 import { v4 as uuid } from 'uuid';
 
-export function AddGarmentScreen() {
+interface AddGarmentScreenProps {
+  hideBottomNav?: boolean;
+}
+
+export function AddGarmentScreen({ hideBottomNav = false }: AddGarmentScreenProps) {
   const { addGarment } = useGarments();
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -188,7 +192,7 @@ export function AddGarmentScreen() {
           </Animated.View>
         )}
       </KeyboardAvoidingView>
-      <StackBottomNav />
+      {!hideBottomNav && <StackBottomNav />}
     </View>
   );
 }

@@ -42,7 +42,7 @@ export function WardrobeScreen() {
         <Text style={styles.emptySubtitle}>Añade tu primera prenda para empezar</Text>
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => navigation.navigate('AddGarment' as never)}
+          onPress={() => navigation.navigate('Add')}
         >
           <Text style={styles.primaryButtonText}>Añadir prenda</Text>
         </TouchableOpacity>

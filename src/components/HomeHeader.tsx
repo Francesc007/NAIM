@@ -7,8 +7,8 @@ import {
   Modal,
   Animated,
   Pressable,
+  useWindowDimensions,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useWeatherGreeting } from '../hooks/useWeatherGreeting';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -36,52 +36,29 @@ const WEATHER_EMOJIS: Record<string, string> = {
   '50n': '🌫️',
 };
 
-const WEATHER_GRADIENTS: Record<string, [string, string]> = {
-  '01d': ['#4A90E2', '#87CEEB'],
-  '01n': ['#2C3E50', '#4A90E2'],
-  '02d': ['#6B8E9F', '#B0C4DE'],
-  '02n': ['#4A5568', '#718096'],
-  '03d': ['#9E9E9E', '#E0E0E0'],
-  '03n': ['#757575', '#BDBDBD'],
-  '04d': ['#9E9E9E', '#EEEEEE'],
-  '04n': ['#616161', '#9E9E9E'],
-  '09d': ['#607D8B', '#90A4AE'],
-  '09n': ['#455A64', '#78909C'],
-  '10d': ['#546E7A', '#78909C'],
-  '10n': ['#37474F', '#607D8B'],
-  '11d': ['#37474F', '#546E7A'],
-  '11n': ['#263238', '#455A64'],
-  '13d': ['#B0BEC5', '#ECEFF1'],
-  '13n': ['#90A4AE', '#CFD8DC'],
-  '50d': ['#BDBDBD', '#EEEEEE'],
-  '50n': ['#9E9E9E', '#E0E0E0'],
-};
-
-const DEFAULT_GRADIENT: [string, string] = ['#9E9E9E', '#E0E0E0'];
-
 export function HomeHeader() {
+  const { width } = useWindowDimensions();
   const { greeting, temp, icon, loading, locationError } = useWeatherGreeting();
   const [modalVisible, setModalVisible] = useState(false);
-  const slideAnim = useRef(new Animated.Value(300)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  const titleSize = Math.min(26, Math.max(18, Math.floor(width * 0.065) + 2));
   const weatherEmoji = icon ? (WEATHER_EMOJIS[icon] ?? '🌡️') : '🌡️';
-  const gradientColors = icon ? (WEATHER_GRADIENTS[icon] ?? DEFAULT_GRADIENT) : DEFAULT_GRADIENT;
 
   const openModal = () => {
     if (!greeting && temp === null) return;
     setModalVisible(true);
-    Animated.spring(slideAnim, {
-      toValue: 0,
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 200,
       useNativeDriver: true,
-      tension: 65,
-      friction: 11,
     }).start();
   };
 
   const closeModal = () => {
-    Animated.timing(slideAnim, {
-      toValue: 300,
-      duration: 250,
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 150,
       useNativeDriver: true,
     }).start(() => setModalVisible(false));
   };
@@ -93,7 +70,10 @@ export function HomeHeader() {
       <View style={styles.headerRow}>
         <View style={styles.leftColumn} />
         <View style={styles.centerColumn}>
-          <Text style={styles.title}>{APP_NAME}</Text>
+          <Text style={[styles.title, { fontSize: titleSize }]} allowFontScaling={false}>
+            {APP_NAME}
+          </Text>
+          <Text style={styles.subtitle}>Tu Estilo Inteligente</Text>
         </View>
         <View style={styles.rightColumn}>
           {showWeather && (
@@ -119,27 +99,14 @@ export function HomeHeader() {
       <Modal
         visible={modalVisible}
         transparent
-        animationType="none"
+        animationType="fade"
         onRequestClose={closeModal}
       >
         <Pressable style={styles.modalOverlay} onPress={closeModal}>
-          <View style={[StyleSheet.absoluteFill, styles.modalBackdrop]} />
-          <View style={[StyleSheet.absoluteFill, styles.gradientOverlay]}>
-            <LinearGradient
-              colors={[...gradientColors, 'transparent']}
-              style={StyleSheet.absoluteFill}
-            />
-          </View>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.modalBackdrop, { opacity: fadeAnim }]} />
           <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
-            <Animated.View
-              style={[
-                styles.modalCard,
-                {
-                  transform: [{ translateY: slideAnim }],
-                },
-              ]}
-            >
-              <View style={styles.modalIconWrap}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
                 <Text style={styles.modalEmoji}>{weatherEmoji}</Text>
                 {temp !== null && (
                   <Text style={styles.modalTemp}>{Math.round(temp)}°</Text>
@@ -149,7 +116,7 @@ export function HomeHeader() {
               <TouchableOpacity style={styles.modalButton} onPress={closeModal}>
                 <Text style={styles.modalButtonText}>Gracias</Text>
               </TouchableOpacity>
-            </Animated.View>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -164,51 +131,61 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
+    flexWrap: 'nowrap',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     minHeight: 48,
   },
   leftColumn: {
-    flex: 1,
+    width: 72,
+    flexShrink: 0,
   },
   centerColumn: {
     flex: 1,
+    flexShrink: 0,
+    flexWrap: 'nowrap',
     alignItems: 'center',
     justifyContent: 'center',
+    minWidth: 80,
   },
   title: {
     fontFamily: typography.fontFamily.vogue,
-    fontSize: 26,
-    letterSpacing: 4,
+    letterSpacing: 3,
     color: colors.text,
   },
+  subtitle: {
+    fontFamily: typography.fontFamily.vogue,
+    fontSize: 13,
+    letterSpacing: 1.5,
+    color: colors.text,
+    marginTop: 2,
+    opacity: 0.9,
+  },
   rightColumn: {
-    flex: 1,
+    width: 72,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
+    minWidth: 60,
   },
   weatherChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   weatherEmoji: {
-    fontSize: 22,
+    fontSize: 20,
   },
   tempText: {
-    fontFamily: typography.fontFamily.bold,
-    fontSize: 18,
+    fontFamily: typography.fontFamily.semiBold,
+    fontSize: 16,
     color: colors.text,
   },
   modalBackdrop: {
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalEmoji: {
-    fontSize: 56,
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
   errorText: {
     fontSize: 11,
@@ -221,52 +198,55 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-  },
-  gradientOverlay: {
-    opacity: 0.2,
+    paddingBottom: 32,
   },
   modalContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 40,
+    paddingHorizontal: 24,
+    alignItems: 'center',
   },
   modalCard: {
     backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 28,
+    borderRadius: 16,
+    padding: 20,
     alignItems: 'center',
+    maxWidth: 320,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  modalIconWrap: {
-    marginBottom: 16,
+  modalHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  modalEmoji: {
+    fontSize: 32,
   },
   modalTemp: {
     fontFamily: typography.fontFamily.bold,
-    fontSize: 24,
+    fontSize: 20,
     color: colors.text,
-    marginTop: 4,
   },
   modalMessage: {
     fontFamily: typography.fontFamily.regular,
-    fontSize: 17,
+    fontSize: 15,
     color: colors.onSurface,
     textAlign: 'center',
-    lineHeight: 26,
-    marginBottom: 24,
+    lineHeight: 22,
+    marginBottom: 16,
   },
   modalButton: {
     backgroundColor: colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 12,
   },
   modalButtonText: {
     fontFamily: typography.fontFamily.semiBold,
-    fontSize: 16,
+    fontSize: 14,
     color: colors.onPrimary,
   },
 });

@@ -45,6 +45,8 @@ export const garmentRepository = {
   },
 
   async add(garment: Garment): Promise<void> {
+    const { saveGarmentToSupabase } = await import('./databaseService');
+    await saveGarmentToSupabase(garment);
     const all = await this.getAll();
     all.push(garment);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(all));

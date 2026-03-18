@@ -26,9 +26,6 @@ import type { TabParamList } from '../navigation/types';
 
 type Nav = BottomTabNavigationProp<TabParamList, 'Home'>;
 
-/** Padding inferior para que el FAB no tape contenido */
-const FAB_BOTTOM_PADDING = 120;
-
 /** Multiplicadores de altura para efecto masonry */
 const MASONRY_HEIGHTS = [1, 1.35, 1.1, 1.45, 1.2, 1.3, 1.05, 1.4, 1.15, 1.25];
 
@@ -59,12 +56,20 @@ export function HomeScreen() {
   const leftColumn = favorites.filter((_, i) => i % 2 === 0);
   const rightColumn = favorites.filter((_, i) => i % 2 === 1);
 
-  // Mostrar modal al cargar si no hay nombre guardado
+  // Mostrar modal solo si no hay nombre Y no hay prendas (usuario nuevo)
+  // Si ya tiene prendas (de Supabase), es usuario existente: no pedir nombre de nuevo
   React.useEffect(() => {
-    if (!userLoading && !userName) {
-      setShowNameModal(true);
+    if (userLoading) return;
+    if (userName) {
+      setShowNameModal(false);
+      return;
     }
-  }, [userLoading, userName]);
+    if (garments.length > 0) {
+      setShowNameModal(false);
+      return;
+    }
+    setShowNameModal(true);
+  }, [userLoading, userName, garments.length]);
 
   const handleSaveName = async () => {
     const trimmed = nameInput.trim();
@@ -177,14 +182,11 @@ export function HomeScreen() {
                 ) : null}
                 {displayName ? ',' : ''}
               </Text>
-              <Text style={styles.heroSubtitle}>
-                Tu Asistente Personal de Estilo
-              </Text>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* Sugerencias con gradiente */}
+        {/* Acción principal */}
         <TouchableOpacity
           style={styles.suggestionCard}
           onPress={() => navigation.navigate('Suggestions')}
@@ -252,7 +254,7 @@ export function HomeScreen() {
               </Text>
               <TouchableOpacity
                 style={styles.primaryButton}
-                onPress={() => navigation.navigate('AddGarment')}
+                onPress={() => navigation.navigate('Add')}
               >
                 <Text style={styles.primaryButtonText}>Añadir prenda</Text>
               </TouchableOpacity>
@@ -290,7 +292,6 @@ export function HomeScreen() {
             </View>
           )}
         </View>
-        <View style={{ height: FAB_BOTTOM_PADDING }} />
       </ScrollView>
 
       {/* Modal de bienvenida - ¿Cómo te llamas? */}
@@ -377,32 +378,32 @@ const styles = StyleSheet.create({
   heroTitle: {
     fontSize: 28,
     color: '#FFFFFF',
-    fontFamily: typography.fontFamily.bold,
-    letterSpacing: 1.2,
+    fontFamily: typography.fontFamily.vogue,
+    letterSpacing: 2,
     lineHeight: 36,
-    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowRadius: 6,
   },
   heroUserName: {
-    fontFamily: typography.fontFamily.bold,
-    fontSize: 32,
-    letterSpacing: 1.2,
-    lineHeight: 40,
+    fontFamily: typography.fontFamily.vogue,
+    fontSize: 30,
+    letterSpacing: 2,
+    lineHeight: 38,
     color: '#FFFFFF',
-    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowRadius: 6,
   },
   heroSubtitle: {
-    fontSize: 18,
+    fontSize: 17,
     color: '#FFFFFF',
     marginTop: 8,
-    fontFamily: typography.fontFamily.italic,
-    letterSpacing: 1,
-    textShadowColor: 'rgba(0,0,0,0.4)',
+    fontFamily: typography.fontFamily.vogue,
+    letterSpacing: 1.5,
+    textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowRadius: 6,
   },
   suggestionCard: {
     marginHorizontal: 20,
@@ -523,14 +524,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: typography.fontFamily.regular,
     fontSize: 15,
-  },
-  masonry: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-start',
-  },
-  column: {
-    flex: 1,
   },
   modalOverlay: {
     flex: 1,

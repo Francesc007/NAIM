@@ -1,6 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Garment } from '../types/garment';
 import { garmentRepository } from '../services/garmentRepository';
+
+const STORAGE_KEY = '@naim_garments';
 
 interface GarmentContextValue {
   garments: Garment[];
@@ -21,11 +24,19 @@ export function GarmentProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await garmentRepository.getAll();
-      setGarments(list);
+      const { getInventoryFromSupabase } = await import('../services/databaseService');
+      const fromSupabase = await getInventoryFromSupabase();
+      if (fromSupabase.length > 0) {
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(fromSupabase));
+        setGarments(fromSupabase);
+      } else {
+        const list = await garmentRepository.getAll();
+        setGarments(list);
+      }
     } catch (error) {
       console.warn('[NAIM] Error cargando prendas:', error);
-      setGarments([]);
+      const list = await garmentRepository.getAll();
+      setGarments(list);
     } finally {
       setLoading(false);
     }
@@ -33,6 +44,15 @@ export function GarmentProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const { supabase } = require('../lib/supabase');
+    if (!supabase) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) refresh();
+    });
+    return () => subscription?.unsubscribe();
   }, [refresh]);
 
   const addGarment = useCallback(async (g: Garment) => {

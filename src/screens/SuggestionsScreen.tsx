@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  FlatList,
+  ActivityIndicator,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -8,6 +9,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useGarments } from '../context/GarmentContext';
+import { useWeatherGreeting } from '../hooks/useWeatherGreeting';
 import { generateSuggestions, OutfitSuggestion } from '../services/suggestionEngine';
 import { GarmentCard } from '../components/GarmentCard';
 import { StackBottomNav } from '../components/StackBottomNav';
@@ -16,20 +18,47 @@ import { colors } from '../theme/colors';
 export function SuggestionsScreen() {
   const navigation = useNavigation();
   const { garments, markWorn } = useGarments();
+  const { temp, condition } = useWeatherGreeting();
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasTriedLoad, setHasTriedLoad] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [occasion, setOccasion] = useState('casual');
-
-  useEffect(() => {
-    loadSuggestions();
-  }, [occasion, garments.length]);
+  const requestInProgress = useRef(false);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const DEBOUNCE_MS = 5000;
 
   const loadSuggestions = async () => {
+    if (requestInProgress.current) return;
+    if (Date.now() < cooldownUntil) return;
+    requestInProgress.current = true;
+    setCooldownUntil(Date.now() + DEBOUNCE_MS);
     setLoading(true);
-    const list = await generateSuggestions(occasion, 3);
-    setSuggestions(list);
-    setLoading(false);
+    setApiError(null);
+    try {
+      const weather = temp !== null && condition ? { temp, condition } : undefined;
+      const { suggestions: list, error } = await generateSuggestions(occasion, weather);
+      setSuggestions(list);
+      setApiError(error ?? null);
+      setHasTriedLoad(true);
+    } finally {
+      setLoading(false);
+      requestInProgress.current = false;
+    }
   };
+
+  const isCooldown = Date.now() < cooldownUntil;
+
+  useEffect(() => {
+    if (cooldownUntil <= 0) return;
+    const remaining = cooldownUntil - Date.now();
+    if (remaining <= 0) {
+      setCooldownUntil(0);
+      return;
+    }
+    const t = setTimeout(() => setCooldownUntil(0), remaining);
+    return () => clearTimeout(t);
+  }, [cooldownUntil]);
 
   const handleWorn = async (suggestion: OutfitSuggestion) => {
     for (const g of suggestion.garments) {
@@ -38,48 +67,21 @@ export function SuggestionsScreen() {
     navigation.navigate('MainHome', { screen: 'Home' });
   };
 
-  if (garments.length < 2) {
+  if (garments.length < 1) {
     return (
       <View style={styles.wrapper}>
         <View style={styles.empty}>
           <Text style={styles.emptyEmoji}>👔</Text>
-          <Text style={styles.emptyTitle}>Necesitas al menos 2 prendas</Text>
+          <Text style={styles.emptyTitle}>Necesitas al menos 1 prenda</Text>
           <Text style={styles.emptySubtitle}>
             Añade más prendas a tu guardarropa para recibir sugerencias de outfit
           </Text>
           <TouchableOpacity
             style={styles.primaryButton}
-            onPress={() => navigation.navigate('AddGarment' as never)}
+            onPress={() => navigation.navigate('MainHome', { screen: 'Add' })}
           >
             <Text style={styles.primaryButtonText}>Añadir prenda</Text>
           </TouchableOpacity>
-        </View>
-        <StackBottomNav />
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={styles.wrapper}>
-        <View style={styles.centered}>
-          <Text style={styles.loadingText}>Generando sugerencias...</Text>
-        </View>
-        <StackBottomNav />
-      </View>
-    );
-  }
-
-  if (suggestions.length === 0) {
-    return (
-      <View style={styles.wrapper}>
-        <View style={styles.centered}>
-          <Text style={styles.emptyTitle}>
-            Añade más variedad de prendas
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            Necesitas tops y bottoms para generar combinaciones
-          </Text>
         </View>
         <StackBottomNav />
       </View>
@@ -90,55 +92,122 @@ export function SuggestionsScreen() {
 
   return (
     <View style={styles.wrapper}>
+      <Modal visible={loading} transparent animationType="fade">
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingTitle}>Tu stylist está trabajando</Text>
+            <Text style={styles.loadingText}>Espera un momento...</Text>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.container}>
         <View style={styles.filterRow}>
-        <Text style={styles.filterLabel}>Ocasión:</Text>
-        <View style={styles.chips}>
-          {occasions.map((o) => (
-            <TouchableOpacity
-              key={o}
-              style={[styles.chip, occasion === o && styles.chipActive]}
-              onPress={() => setOccasion(o)}
-            >
-              <Text
-                style={[
-                  styles.chipText,
-                  occasion === o && styles.chipTextActive,
-                ]}
+          <Text style={styles.filterLabel}>Ocasión:</Text>
+          <View style={styles.chips}>
+            {occasions.map((o) => (
+              <TouchableOpacity
+                key={o}
+                style={[styles.chip, occasion === o && styles.chipActive]}
+                onPress={() => setOccasion(o)}
+                disabled={loading}
               >
-                {o}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.chipText,
+                    occasion === o && styles.chipTextActive,
+                  ]}
+                >
+                  {o}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-      </View>
 
-      <FlatList
-        data={suggestions}
-        keyExtractor={(_, i) => String(i)}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={styles.outfitRow}>
-              {item.garments.map((g) => (
-                <GarmentCard
-                  key={g.id}
-                  garment={g}
-                  size="small"
-                  hideLabel
-                  imageResizeMode="contain"
-                />
-              ))}
-            </View>
+        {suggestions.length === 0 ? (
+          <View style={styles.centered}>
+            {!hasTriedLoad ? (
+              <>
+                <Text style={styles.emptyTitle}>Genera tu outfit con IA</Text>
+                <Text style={styles.emptySubtitle}>
+                  Toca el botón para que el stylist te recomiende una combinación
+                </Text>
+                <TouchableOpacity
+                  style={[styles.primaryButton, (loading || isCooldown) && styles.primaryButtonDisabled]}
+                  onPress={loadSuggestions}
+                  disabled={loading || isCooldown}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    {isCooldown ? 'Espera 5 seg...' : 'Generar sugerencia'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.emptyTitle}>
+                  {apiError ? 'No se pudo generar' : 'Sin sugerencias'}
+                </Text>
+                {apiError ? (
+                  <Text style={styles.errorText}>{apiError}</Text>
+                ) : (
+                  <Text style={styles.emptySubtitle}>
+                    Añade más prendas e intenta de nuevo
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={[styles.primaryButton, (loading || isCooldown) && styles.primaryButtonDisabled]}
+                  onPress={loadSuggestions}
+                  disabled={loading || isCooldown}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    {isCooldown ? 'Espera 5 seg...' : 'Reintentar'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        ) : (
+          <View style={styles.result}>
+            {apiError ? (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorBannerText}>{apiError}</Text>
+              </View>
+            ) : null}
+            {suggestions.map((item, i) => (
+              <View key={i} style={styles.card}>
+                <View style={styles.outfitRow}>
+                  {item.garments.map((g) => (
+                    <GarmentCard
+                      key={g.id}
+                      garment={g}
+                      size="small"
+                      hideLabel
+                      imageResizeMode="contain"
+                    />
+                  ))}
+                </View>
+                <Text style={styles.reasonText}>{item.reason}</Text>
+                <TouchableOpacity
+                  style={styles.wornButton}
+                  onPress={() => handleWorn(item)}
+                >
+                  <Text style={styles.wornButtonText}>Me lo pongo</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
             <TouchableOpacity
-              style={styles.wornButton}
-              onPress={() => handleWorn(item)}
+              style={[styles.secondaryButton, (loading || isCooldown) && styles.primaryButtonDisabled]}
+              onPress={loadSuggestions}
+              disabled={loading || isCooldown}
             >
-              <Text style={styles.wornButtonText}>Me lo pongo</Text>
+              <Text style={styles.secondaryButtonText}>
+                {isCooldown ? 'Espera 5 seg...' : 'Otra sugerencia'}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
-      />
       </View>
       <StackBottomNav />
     </View>
@@ -154,15 +223,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface,
   },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingBox: {
+    backgroundColor: colors.surface,
+    padding: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.onSurfaceVariant,
+  },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.onSurfaceVariant,
   },
   empty: {
     flex: 1,
@@ -186,6 +273,25 @@ const styles = StyleSheet.create({
     marginTop: 12,
     textAlign: 'center',
   },
+  errorText: {
+    fontSize: 12,
+    color: colors.error,
+    marginTop: 12,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+  },
+  errorBanner: {
+    backgroundColor: colors.error + '20',
+    padding: 12,
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 8,
+  },
+  errorBannerText: {
+    fontSize: 12,
+    color: colors.error,
+    textAlign: 'center',
+  },
   primaryButton: {
     marginTop: 24,
     paddingHorizontal: 24,
@@ -193,10 +299,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: 12,
   },
+  primaryButtonDisabled: {
+    opacity: 0.6,
+  },
   primaryButtonText: {
     color: colors.onPrimary,
     fontWeight: '600',
     fontSize: 16,
+  },
+  secondaryButton: {
+    marginTop: 16,
+    marginHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    color: colors.accent,
+    textDecorationLine: 'underline',
   },
   filterRow: {
     padding: 16,
@@ -228,7 +348,8 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: colors.onPrimary,
   },
-  list: {
+  result: {
+    flex: 1,
     padding: 16,
   },
   card: {
@@ -246,6 +367,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 12,
+  },
+  reasonText: {
+    fontSize: 14,
+    color: colors.onSurfaceVariant,
+    marginBottom: 12,
+    fontStyle: 'italic',
   },
   wornButton: {
     backgroundColor: colors.primary,

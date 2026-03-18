@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as Location from 'expo-location';
 import { getCurrentWeather } from '../services/weatherService';
-import { getMotivationalGreeting, getFallbackGreeting } from '../services/greetingService';
+import { getWeatherMessage } from '../services/greetingService';
 
 export interface WeatherGreetingState {
   greeting: string | null;
@@ -43,9 +43,9 @@ export function useWeatherGreeting() {
         setState((s) => ({ ...s, loading: false }));
         return;
       }
-      const greeting = await getMotivationalGreeting(weather.temp, weather.condition);
+      const greeting = getWeatherMessage(weather.temp, weather.icon);
       setState({
-        greeting: greeting ?? getFallbackGreeting(weather.temp, weather.condition),
+        greeting,
         temp: weather.temp,
         condition: weather.condition,
         icon: weather.icon,
@@ -67,7 +67,7 @@ export function useWeatherGreeting() {
   }, [fetchWeather]);
 
   useEffect(() => {
-    const interval = setInterval(fetchWeather, 30 * 60 * 1000);
+    const interval = setInterval(fetchWeather, 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchWeather]);
 
