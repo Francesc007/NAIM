@@ -1,8 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { Garment } from '../types/garment';
-
-const STORAGE_KEY = '@naim_garments';
+import { getOrCreateDeviceId, getGarmentsStorageKey } from './deviceIdService';
 
 function rowToGarment(row: Record<string, unknown>): Garment {
   return {
@@ -56,7 +55,9 @@ export async function uploadInventoryToSupabase(): Promise<{ success: boolean; c
     const userId = await getCurrentUserId();
     if (!userId) return { success: false, count: 0, error: 'Usuario no autenticado' };
 
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    const deviceId = await getOrCreateDeviceId();
+    const storageKey = getGarmentsStorageKey(deviceId);
+    const raw = await AsyncStorage.getItem(storageKey);
     if (!raw) return { success: true, count: 0 };
 
     const list = JSON.parse(raw) as Garment[];
@@ -81,7 +82,13 @@ export async function uploadInventoryToSupabase(): Promise<{ success: boolean; c
 export async function getInventoryFromSupabase(): Promise<Garment[]> {
   if (!supabase) return [];
   try {
-    const { data, error } = await supabase.from('items').select('*').order('created_at', { ascending: false });
+    const userId = await getCurrentUserId();
+    if (!userId) return [];
+    const { data, error } = await supabase
+      .from('items')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
     if (error) {
       console.warn('[NAIM] Error leyendo de Supabase:', error.message);
       return [];

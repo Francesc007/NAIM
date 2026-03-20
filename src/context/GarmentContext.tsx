@@ -2,8 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Garment } from '../types/garment';
 import { garmentRepository } from '../services/garmentRepository';
-
-const STORAGE_KEY = '@naim_garments';
+import { getOrCreateDeviceId, getGarmentsStorageKey } from '../services/deviceIdService';
 
 interface GarmentContextValue {
   garments: Garment[];
@@ -27,7 +26,8 @@ export function GarmentProvider({ children }: { children: React.ReactNode }) {
       const { getInventoryFromSupabase } = await import('../services/databaseService');
       const fromSupabase = await getInventoryFromSupabase();
       if (fromSupabase.length > 0) {
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(fromSupabase));
+        const deviceId = await getOrCreateDeviceId();
+        await AsyncStorage.setItem(getGarmentsStorageKey(deviceId), JSON.stringify(fromSupabase));
         setGarments(fromSupabase);
       } else {
         const list = await garmentRepository.getAll();

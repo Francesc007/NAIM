@@ -1,18 +1,24 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Garment } from '../types/garment';
+import { getOrCreateDeviceId, getGarmentsStorageKey } from './deviceIdService';
 
-const STORAGE_KEY = '@naim_garments';
-const LEGACY_KEY = 'guardarropa_garments'; // Migración desde versión anterior
+const LEGACY_KEY = 'guardarropa_garments';
+
+async function getStorageKey(): Promise<string> {
+  const deviceId = await getOrCreateDeviceId();
+  return getGarmentsStorageKey(deviceId);
+}
 
 async function loadGarments(): Promise<Garment[]> {
   try {
-    let raw = await AsyncStorage.getItem(STORAGE_KEY);
+    const key = await getStorageKey();
+    let raw = await AsyncStorage.getItem(key);
     if (!raw) {
       raw = await AsyncStorage.getItem(LEGACY_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         const list = Array.isArray(parsed) ? parsed : [];
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        await AsyncStorage.setItem(key, JSON.stringify(list));
         return list;
       }
       return [];
@@ -27,8 +33,8 @@ async function loadGarments(): Promise<Garment[]> {
 
 async function saveGarments(garments: Garment[]): Promise<void> {
   try {
-    const json = JSON.stringify(garments);
-    await AsyncStorage.setItem(STORAGE_KEY, json);
+    const key = await getStorageKey();
+    await AsyncStorage.setItem(key, JSON.stringify(garments));
   } catch (error) {
     console.warn('[NAIM] Error guardando prendas:', error);
     throw error;
@@ -49,7 +55,7 @@ export const garmentRepository = {
     await saveGarmentToSupabase(garment);
     const all = await this.getAll();
     all.push(garment);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    await saveGarments(all);
   },
 
   async update(garment: Garment): Promise<void> {
