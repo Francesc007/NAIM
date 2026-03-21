@@ -11,9 +11,9 @@ export const DEFAULT_USER_NAME = 'Frank';
 export const MOCK_GARMENTS = [
   {
     id: 'mock-1',
-    name: 'Camisa blanca premium',
+    name: 'Chamarra premium',
     imageUrl:
-      'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=400',
+      'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400',
   },
   {
     id: 'mock-2',
@@ -23,9 +23,9 @@ export const MOCK_GARMENTS = [
   },
   {
     id: 'mock-3',
-    name: 'Suéter minimalista',
+    name: 'Vestido elegante',
     imageUrl:
-      'https://images.unsplash.com/photo-1552374196-c4e7ffc6e126?w=400',
+      'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=400',
   },
 ];
 

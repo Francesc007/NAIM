@@ -9,7 +9,7 @@ import {
   Pressable,
   useWindowDimensions,
 } from 'react-native';
-import { useWeatherGreeting } from '../hooks/useWeatherGreeting';
+import { useWeather } from '../context/WeatherContext';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { APP_NAME } from '../constants/mockData';
@@ -38,11 +38,11 @@ const WEATHER_EMOJIS: Record<string, string> = {
 
 export function HomeHeader() {
   const { width } = useWindowDimensions();
-  const { greeting, temp, icon, loading, locationError } = useWeatherGreeting();
+  const { greeting, temp, icon, loading, locationError } = useWeather();
   const [modalVisible, setModalVisible] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const titleSize = Math.min(26, Math.max(18, Math.floor(width * 0.065) + 2));
+  const titleSize = Math.min(30, Math.max(22, Math.floor(width * 0.07) + 2));
   const weatherEmoji = icon ? (WEATHER_EMOJIS[icon] ?? '🌡️') : '🌡️';
 
   const openModal = () => {
@@ -68,15 +68,19 @@ export function HomeHeader() {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <View style={styles.leftColumn} />
-        <View style={styles.centerColumn}>
-          <Text style={[styles.title, { fontSize: titleSize }]} allowFontScaling={false}>
+        <View style={styles.centerColumn} pointerEvents="box-none">
+          <Text style={[styles.title, { fontSize: titleSize, lineHeight: titleSize * 1.25 }]} allowFontScaling={false}>
             {APP_NAME}
           </Text>
           <Text style={styles.subtitle}>Tu Estilo Inteligente</Text>
         </View>
-        <View style={styles.rightColumn}>
-          {showWeather && (
+        <View style={styles.rightColumn} pointerEvents="box-none">
+          {loading ? (
+            <View style={styles.weatherSkeleton}>
+              <View style={styles.skeletonEmoji} />
+              <View style={styles.skeletonTemp} />
+            </View>
+          ) : showWeather ? (
             <TouchableOpacity
               style={styles.weatherChip}
               onPress={openModal}
@@ -87,7 +91,7 @@ export function HomeHeader() {
                 <Text style={styles.tempText}>{Math.round(temp)}°</Text>
               )}
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
       </View>
       {locationError && (
@@ -132,27 +136,26 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     flexWrap: 'nowrap',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    minHeight: 48,
-  },
-  leftColumn: {
-    width: 72,
-    flexShrink: 0,
+    minHeight: 56,
+    position: 'relative',
   },
   centerColumn: {
-    flex: 1,
-    flexShrink: 0,
-    flexWrap: 'nowrap',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 80,
+    paddingHorizontal: 56,
   },
   title: {
     fontFamily: typography.fontFamily.vogue,
     letterSpacing: 3,
     color: colors.text,
+    includeFontPadding: false,
   },
   subtitle: {
     fontFamily: typography.fontFamily.vogue,
@@ -163,11 +166,11 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   rightColumn: {
-    width: 72,
+    marginLeft: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    minWidth: 60,
+    paddingLeft: 12,
   },
   weatherChip: {
     flexDirection: 'row',
@@ -175,6 +178,25 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingVertical: 4,
     paddingHorizontal: 8,
+  },
+  weatherSkeleton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  skeletonEmoji: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0,0,0,0.08)',
+  },
+  skeletonTemp: {
+    width: 28,
+    height: 18,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0,0,0,0.08)',
   },
   weatherEmoji: {
     fontSize: 20,
@@ -198,7 +220,7 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    paddingBottom: 32,
+    paddingBottom: 100,
   },
   modalContent: {
     paddingHorizontal: 24,

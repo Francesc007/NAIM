@@ -15,6 +15,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { UserProvider } from './src/context/UserContext';
+import { WeatherProvider } from './src/context/WeatherContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { supabase } from './src/lib/supabase';
 
@@ -40,7 +41,7 @@ export default function App() {
     })();
   }, []);
 
-  useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Montserrat_200ExtraLight,
     Montserrat_300Light,
     Montserrat_400Regular,
@@ -51,14 +52,22 @@ export default function App() {
   });
 
   const onLayoutRootView = useCallback(async () => {
-    await SplashScreen.hideAsync();
-  }, []);
+    if (fontsLoaded || fontError) {
+      await SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
 
   return (
     <ErrorBoundary>
       <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
         <UserProvider>
-          <AppNavigator />
+          <WeatherProvider>
+            <AppNavigator />
+          </WeatherProvider>
         </UserProvider>
         <StatusBar style="dark" />
       </View>

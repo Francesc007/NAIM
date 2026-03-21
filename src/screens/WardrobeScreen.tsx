@@ -38,6 +38,7 @@ export function WardrobeScreen() {
   if (garments.length === 0 && !loading) {
     return (
       <View style={[styles.empty, { backgroundColor: colors.background }]}>
+        <Text style={styles.emptyEmoji}>👔</Text>
         <Text style={styles.emptyElegantText}>Tu clóset está esperando...</Text>
         <Text style={styles.emptySubtitle}>Añade tu primera prenda para empezar</Text>
         <TouchableOpacity
@@ -145,11 +146,12 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 16,
-    fontWeight: '600',
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.onSurface,
   },
   meta: {
     fontSize: 14,
+    fontFamily: typography.fontFamily.light,
     color: colors.onSurfaceVariant,
     marginTop: 4,
   },
@@ -158,6 +160,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
+  },
+  emptyEmoji: {
+    fontSize: 80,
+    marginBottom: 24,
   },
   emptyElegantText: {
     fontSize: 22,
@@ -181,8 +187,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   primaryButtonText: {
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.onPrimary,
-    fontWeight: '600',
     fontSize: 16,
   },
 });

@@ -8,6 +8,7 @@ export const GARMENT_TYPES = [
   'falda',
   'vestido',
   'chamarra',
+  'suéter',
   'calzado',
   'accesorio',
 ] as const;

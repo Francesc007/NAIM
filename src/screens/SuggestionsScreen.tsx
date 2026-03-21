@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -9,16 +10,17 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useGarments } from '../context/GarmentContext';
-import { useWeatherGreeting } from '../hooks/useWeatherGreeting';
+import { useWeather } from '../context/WeatherContext';
 import { generateSuggestions, OutfitSuggestion } from '../services/suggestionEngine';
 import { GarmentCard } from '../components/GarmentCard';
 import { StackBottomNav } from '../components/StackBottomNav';
 import { colors } from '../theme/colors';
+import { typography } from '../theme/typography';
 
 export function SuggestionsScreen() {
   const navigation = useNavigation();
   const { garments, markWorn } = useGarments();
-  const { temp, condition } = useWeatherGreeting();
+  const { temp, condition } = useWeather();
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasTriedLoad, setHasTriedLoad] = useState(false);
@@ -177,7 +179,11 @@ export function SuggestionsScreen() {
             ) : null}
             {suggestions.map((item, i) => (
               <View key={i} style={styles.card}>
-                <View style={styles.outfitRow}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.outfitRow}
+                >
                   {item.garments.map((g) => (
                     <GarmentCard
                       key={g.id}
@@ -187,7 +193,7 @@ export function SuggestionsScreen() {
                       imageResizeMode="contain"
                     />
                   ))}
-                </View>
+                </ScrollView>
                 <Text style={styles.reasonText}>{item.reason}</Text>
                 <TouchableOpacity
                   style={styles.wornButton}
@@ -237,12 +243,14 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   loadingTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.onSurface,
+    fontSize: 22,
+    fontFamily: typography.fontFamily.light,
+    letterSpacing: 0.5,
+    color: colors.text,
   },
   loadingText: {
-    fontSize: 14,
+    fontSize: 15,
+    fontFamily: typography.fontFamily.light,
     color: colors.onSurfaceVariant,
   },
   centered: {
@@ -262,19 +270,23 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.onSurface,
+    fontSize: 22,
+    fontFamily: typography.fontFamily.light,
+    letterSpacing: 0.5,
+    color: colors.text,
     textAlign: 'center',
+    marginBottom: 12,
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 15,
+    fontFamily: typography.fontFamily.light,
     color: colors.onSurfaceVariant,
-    marginTop: 12,
+    marginBottom: 24,
     textAlign: 'center',
   },
   errorText: {
-    fontSize: 12,
+    fontSize: 14,
+    fontFamily: typography.fontFamily.regular,
     color: colors.error,
     marginTop: 12,
     textAlign: 'center',
@@ -288,7 +300,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   errorBannerText: {
-    fontSize: 12,
+    fontSize: 14,
+    fontFamily: typography.fontFamily.regular,
     color: colors.error,
     textAlign: 'center',
   },
@@ -303,8 +316,8 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   primaryButtonText: {
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.onPrimary,
-    fontWeight: '600',
     fontSize: 16,
   },
   secondaryButton: {
@@ -314,7 +327,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   secondaryButtonText: {
-    fontSize: 14,
+    fontSize: 15,
+    fontFamily: typography.fontFamily.light,
     color: colors.accent,
     textDecorationLine: 'underline',
   },
@@ -322,8 +336,8 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   filterLabel: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.onSurface,
     marginBottom: 8,
   },
@@ -343,9 +357,11 @@ const styles = StyleSheet.create({
   },
   chipText: {
     fontSize: 14,
+    fontFamily: typography.fontFamily.regular,
     color: colors.onSurface,
   },
   chipTextActive: {
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.onPrimary,
   },
   result: {
@@ -367,12 +383,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 12,
+    paddingRight: 16,
   },
   reasonText: {
     fontSize: 14,
+    fontFamily: typography.fontFamily.italic,
     color: colors.onSurfaceVariant,
     marginBottom: 12,
-    fontStyle: 'italic',
   },
   wornButton: {
     backgroundColor: colors.primary,
@@ -381,8 +398,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   wornButtonText: {
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.onPrimary,
-    fontWeight: '600',
     fontSize: 14,
   },
 });

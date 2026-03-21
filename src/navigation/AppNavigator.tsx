@@ -20,7 +20,7 @@ const Tab = createBottomTabNavigator<TabParamList>();
 
 const headerTitleStyle = {
   fontFamily: typography.fontFamily.vogue,
-  fontSize: 24,
+  fontSize: 20,
   letterSpacing: 2,
 };
 

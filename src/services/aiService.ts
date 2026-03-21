@@ -26,7 +26,7 @@ const OCCASIONS = ['Casual', 'Formal', 'Deportivo', 'Trabajo', 'Ocasión Especia
 
 function buildSystemPrompt(weather?: { temp: number; condition: string }): string {
   const weatherLine = weather
-    ? `CLIMA: ${weather.temp}°C, ${weather.condition}. Adapta: si hace frío (<15°C) NO sugieras bermudas, shorts ni sandalias; si calor (>28°C) prioriza prendas ligeras.`
+    ? `CLIMA: ${weather.temp}°C, ${weather.condition}. Adapta: si hace frío (<15°C) incluye capa (chamarra/suéter); si calor (>28°C) prioriza prendas ligeras, sin capa.`
     : 'No hay datos de clima.';
   return `Eres un experto en moda y stylist profesional. Reglas ESTRICTAS:
 
@@ -34,15 +34,15 @@ function buildSystemPrompt(weather?: { temp: number; condition: string }): strin
 
 2. OCASIÓN: Si la ocasión es FORMAL, está PROHIBIDO sugerir jeans, prendas deportivas, camisetas casual o sneakers. Solo prendas elegantes y apropiadas.
 
-3. REGLA DE 3 PIEZAS: Debes seleccionar SIEMPRE exactamente:
-   - Una parte SUPERIOR (camiseta, blusa, chamarra o similar)
-   - Una parte INFERIOR (pantalón o falda)
-   - Un CALZADO
-   NUNCA sugieras dos chamarras ni dos de la misma categoría.
+3. ESTRUCTURA DEL OUTFIT (4-5 piezas):
+   - OBLIGATORIOS: Top (camiseta/blusa), Bottom (pantalón/falda), Calzado
+   - OPCIONAL POR CLIMA: Capa (chamarra o suéter) solo si hace frío (<15°C)
+   - OPCIONAL POR ESTILO: Accesorio (lentes, gorra o bolsa) para dar personalidad
+   NUNCA repitas dos prendas de la misma categoría.
 
 4. COHERENCIA: Las prendas deben combinar en estilo, color y nivel de formalidad según la ocasión.
 
-5. SI FALTAN PIEZAS: Si no hay suficientes prendas que encajen perfectamente en la ocasión, indica claramente: "Faltan prendas en [categoría específica] para esta ocasión" en lugar de dar una mala sugerencia.
+5. PRIORIZA las prendas que ya están en el clóset del usuario (las que te pasamos). No inventes prendas.
 
 Responde en una sola frase corta y con estilo. Solo texto, sin formato.`;
 }
@@ -85,10 +85,10 @@ export async function getOutfitSuggestion(
 
   const userPrompt = `OCASIÓN SOLICITADA: ${occasionLabel}
 
-PRENDAS DISPONIBLES (ya filtradas para esta ocasión):
+PRENDAS DISPONIBLES (del clóset del usuario, ya filtradas para esta ocasión):
 ${garmentsList}
 
-Selecciona exactamente 1 superior, 1 inferior y 1 calzado. Da tu recomendación en una frase.`;
+Estas prendas ya fueron seleccionadas para el outfit. Da tu recomendación en una frase corta: por qué combinan bien, el estilo que logran, o un detalle que destaque. Prioriza SIEMPRE prendas que existan en esta lista.`;
 
   const systemPrompt = buildSystemPrompt(weather);
 

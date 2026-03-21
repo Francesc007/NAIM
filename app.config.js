@@ -16,6 +16,54 @@ module.exports = {
     runtimeVersion: {
       policy: 'appVersion',
     },
+    orientation: 'portrait',
+    icon: './assets/icon.png',
+    userInterfaceStyle: 'light',
+    splash: {
+      image: './assets/splash-icon.png',
+      resizeMode: 'contain',
+      backgroundColor: '#ffffff',
+    },
+    ios: {
+      supportsTablet: true,
+    },
+    android: {
+      package: 'com.frank714mos.naim',
+      adaptiveIcon: {
+        backgroundColor: '#E6F4FE',
+        foregroundImage: './assets/android-icon-foreground.png',
+        backgroundImage: './assets/android-icon-background.png',
+        monochromeImage: './assets/android-icon-monochrome.png',
+      },
+      predictiveBackGestureEnabled: false,
+    },
+    web: {
+      favicon: './assets/favicon.png',
+    },
+    plugins: [
+      'expo-font',
+      [
+        'expo-location',
+        {
+          locationWhenInUsePermission:
+            'NAIM usa tu ubicación para mostrarte el clima y sugerencias de outfit.',
+          locationAlwaysAndWhenInUsePermission:
+            'NAIM usa tu ubicación para mostrarte el clima y sugerencias de outfit.',
+        },
+      ],
+      [
+        'expo-image-picker',
+        {
+          colors: {
+            cropBackgroundColor: '#F8F9FA',
+            cropToolbarColor: '#DDBEA9',
+            cropToolbarIconColor: '#212529',
+            cropToolbarActionTextColor: '#212529',
+            cropBackButtonIconColor: '#212529',
+          },
+        },
+      ],
+    ],
     extra: {
       eas: {
         projectId: 'd5a29fa1-0095-4b17-84c0-68955e31b70e',

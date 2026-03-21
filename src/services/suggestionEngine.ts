@@ -11,10 +11,12 @@ export interface OutfitSuggestion {
 const CACHE_KEY_PREFIX = 'suggestion_cache_';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
 
-/** Categorías: superior, inferior, calzado */
-const CAT_TOP = ['camiseta', 'chamarra', 'vestido'];
+/** Categorías: superior, inferior, calzado, capa, accesorio */
+const CAT_TOP = ['camiseta', 'vestido'];
 const CAT_BOTTOM = ['pantalón', 'falda'];
 const CAT_SHOES = ['calzado'];
+const CAT_LAYER = ['chamarra', 'suéter'];
+const CAT_ACCESSORY = ['accesorio'];
 
 function getDateKey(): string {
   const d = new Date();
@@ -79,11 +81,20 @@ function normCat(c: string): string {
   return (c || '').toLowerCase().trim();
 }
 
-/** Selecciona 1 superior, 1 inferior y 1 calzado. Vestido cuenta como superior+inferior. */
-function selectThreePieces(garments: Garment[]): { selected: Garment[]; missing: string[] } {
+/**
+ * Selecciona outfit: Top, Bottom, Calzado (obligatorios) + Capa (si clima frío) + Accesorio (opcional).
+ * Vestido cuenta como superior+inferior.
+ * Prioriza prendas del clóset (ya filtradas por Supabase/local).
+ */
+function selectOutfitPieces(
+  garments: Garment[],
+  isCold: boolean
+): { selected: Garment[]; missing: string[] } {
   const tops = garments.filter((g) => CAT_TOP.includes(normCat(g.category)));
   const bottoms = garments.filter((g) => CAT_BOTTOM.includes(normCat(g.category)));
   const shoes = garments.filter((g) => CAT_SHOES.includes(normCat(g.category)));
+  const layers = garments.filter((g) => CAT_LAYER.includes(normCat(g.category)));
+  const accessories = garments.filter((g) => CAT_ACCESSORY.includes(normCat(g.category)));
 
   const selected: Garment[] = [];
   const missing: string[] = [];
@@ -92,21 +103,30 @@ function selectThreePieces(garments: Garment[]): { selected: Garment[]; missing:
   const vestidos = garments.filter((g) => normCat(g.category) === 'vestido');
   if (vestidos.length > 0) {
     selected.push(vestidos[0]);
-    if (shoes.length > 0) {
-      selected.push(shoes[0]);
-      return { selected, missing: [] };
+    if (shoes.length > 0) selected.push(shoes[0]);
+    else {
+      return { selected, missing: ['Calzado'] };
     }
-    return { selected, missing: ['Calzado'] };
+  } else {
+    if (tops.length > 0) selected.push(tops[0]);
+    else missing.push('Top (camiseta)');
+    if (bottoms.length > 0) selected.push(bottoms[0]);
+    else missing.push('Bottom (pantalón, falda)');
+    if (shoes.length > 0) selected.push(shoes[0]);
+    else missing.push('Calzado');
   }
 
-  if (tops.length > 0) selected.push(tops[0]);
-  else missing.push('parte superior (camiseta, chamarra)');
+  if (missing.length > 0) return { selected, missing };
 
-  if (bottoms.length > 0) selected.push(bottoms[0]);
-  else missing.push('parte inferior (pantalón, falda)');
+  // Capa: chamarra/suéter si hace frío (<15°C)
+  if (isCold && layers.length > 0) {
+    selected.push(layers[0]);
+  }
 
-  if (shoes.length > 0) selected.push(shoes[0]);
-  else missing.push('calzado');
+  // Accesorio: lentes, gorra o bolsa (por estilo)
+  if (accessories.length > 0) {
+    selected.push(accessories[0]);
+  }
 
   return { selected, missing };
 }
@@ -157,8 +177,9 @@ export async function generateSuggestions(
     };
   }
 
-  // 2. Regla de 3 piezas: 1 superior, 1 inferior, 1 calzado
-  const { selected, missing } = selectThreePieces(filtered);
+  // 2. Selección: Top, Bottom, Calzado (obligatorios) + Capa (si frío) + Accesorio (opcional)
+  const isCold = weather ? weather.temp < 15 : false;
+  const { selected, missing } = selectOutfitPieces(filtered, isCold);
   if (missing.length > 0) {
     return {
       suggestions: [],
