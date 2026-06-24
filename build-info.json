@@ -1,0 +1,49 @@
+﻿{
+  "id": "fbbcfdba-0daa-4f49-bb4c-7b98b79d1cdd",
+  "status": "ERRORED",
+  "platform": "ANDROID",
+  "error": {
+    "errorCode": "EAS_BUILD_UNKNOWN_GRADLE_ERROR",
+    "message": "Gradle build failed with unknown error. See logs for the \"Run gradlew\" phase for more information."
+  },
+  "artifacts": {},
+  "fingerprint": {
+    "id": "019ef815-800f-7756-ab11-cc4f9b47405d",
+    "hash": "8581a573f5e3ab8288b4b290fe5a5fd63ad6240b"
+  },
+  "initiatingActor": {
+    "id": "71315d82-183e-4c0d-bc8b-e127514ef9bf",
+    "displayName": "frank_714mos"
+  },
+  "logFiles": [
+    "https://storage.googleapis.com/eas-workflows-production/logs/d5a29fa1-0095-4b17-84c0-68955e31b70e/fbbcfdba-0daa-4f49-bb4c-7b98b79d1cdd/2026-06-24T05%3A23%3A44Z-925c48c4-8721-46cd-a254-419292110df6.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260624%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260624T053837Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=2466c8f9ded0d6d40ecf54ff5bcd397ef27d4a96df593e37fd4cfad8911392abb45b9016d6950c9706023f6f57bcf0b70d651f8b227b8c985a948a5b46f518abbba1faefd33de614e31bb9b7d2f2b0fac87ea76019531c955ac95ae4907c5659194311fb2cbbb5b54059a46afb300424e9c03d787ffc0a984fc776ff21da9c443b585ee0a4027d479f47261c4b8e883927e45d5657093c43a4cca6170ae166c2878ceb426c72b400ed471b42ff2aa15ab24245cba9d3a4fa273a88221a23e98063de2148d59e9303a50a8563ad208f28f1f0d9673cbd1982705010379643ebf53d45ceb73f27ffb022535a85d2eb80369348cb07fbe15ec131da8ec5095c1a8d"
+  ],
+  "project": {
+    "id": "d5a29fa1-0095-4b17-84c0-68955e31b70e",
+    "name": "guardarropa-app",
+    "slug": "guardarropa-app",
+    "ownerAccount": {
+      "id": "8064805b-998b-4115-8fba-a69bf98bee84",
+      "name": "frank_714mos"
+    }
+  },
+  "distribution": "INTERNAL",
+  "buildProfile": "preview",
+  "sdkVersion": "55.0.0",
+  "appVersion": "1.0.0",
+  "appBuildVersion": "2",
+  "runtimeVersion": "1.0.0",
+  "gitCommitHash": "5a045dd37f940b24df013b2d1cf26d06ba7c2354",
+  "gitCommitMessage": "MVP funcional en dispositivo real - Ajustes de conexi├│n",
+  "priority": "NORMAL_PLUS",
+  "createdAt": "2026-06-24T05:23:39.120Z",
+  "updatedAt": "2026-06-24T05:33:49.594Z",
+  "completedAt": "2026-06-24T05:33:49.423Z",
+  "expirationDate": "2026-07-08T05:23:39.146Z",
+  "isForIosSimulator": false,
+  "metrics": {
+    "buildWaitTime": 5100,
+    "buildQueueTime": 5007,
+    "buildDuration": 600196
+  }
+}

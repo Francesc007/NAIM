@@ -13,15 +13,21 @@ import {
 import { GFSDidot_400Regular } from '@expo-google-fonts/gfs-didot';
 import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { UserProvider } from './src/context/UserContext';
 import { WeatherProvider } from './src/context/WeatherContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { supabase } from './src/lib/supabase';
+import { logEnvDiagnostics } from './src/utils/env';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {
+  useEffect(() => {
+    logEnvDiagnostics();
+  }, []);
+
   useEffect(() => {
     if (!supabase) return;
     (async () => {
@@ -63,14 +69,16 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-        <UserProvider>
-          <WeatherProvider>
-            <AppNavigator />
-          </WeatherProvider>
-        </UserProvider>
-        <StatusBar style="dark" />
-      </View>
+      <SafeAreaProvider>
+        <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+          <UserProvider>
+            <WeatherProvider>
+              <AppNavigator />
+            </WeatherProvider>
+          </UserProvider>
+          <StatusBar style="dark" />
+        </View>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

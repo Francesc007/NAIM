@@ -8,8 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Garment } from '../types/garment';
-import { colors } from '../theme/colors';
-import { typography } from '../theme/typography';
+import { colors, radius, shadows, spacing, subtleBrightBorder, typography } from '../theme';
 
 interface GarmentCardProps {
   garment: Garment;
@@ -23,6 +22,8 @@ interface GarmentCardProps {
   hideLabel?: boolean;
   /** resizeMode para la imagen: 'cover' o 'contain' */
   imageResizeMode?: 'cover' | 'contain';
+  /** Borde sutil brillante (Favoritos / Mi Colección) */
+  showSubtleBorder?: boolean;
 }
 
 export function GarmentCard({
@@ -33,6 +34,7 @@ export function GarmentCard({
   heightMultiplier = 1,
   hideLabel = false,
   imageResizeMode = 'cover',
+  showSubtleBorder = false,
 }: GarmentCardProps) {
   const baseDim = size === 'small' ? 60 : size === 'large' ? 120 : 100;
   const width = customWidth ?? baseDim;
@@ -77,11 +79,12 @@ export function GarmentCard({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       activeOpacity={1}
-      style={{ width, marginBottom: 12 }}
+      style={{ width, marginBottom: spacing.sm }}
     >
       <Animated.View
         style={[
           styles.container,
+          showSubtleBorder && styles.subtleBorder,
           {
             width,
             height,
@@ -117,15 +120,14 @@ export function GarmentCard({
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 20,
+    borderRadius: radius.xl,
     overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 2,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
   },
+  subtleBorder: subtleBrightBorder,
   imageContainer: {
     flex: 1,
     overflow: 'hidden',
@@ -136,7 +138,7 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     flex: 1,
-    backgroundColor: colors.accent + '30',
+    backgroundColor: colors.primaryMuted,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -144,9 +146,9 @@ const styles = StyleSheet.create({
     fontSize: 28,
   },
   nameContainer: {
-    padding: 8,
+    padding: spacing.xs,
     paddingTop: 6,
-    backgroundColor: colors.accent + '25',
+    backgroundColor: colors.primaryMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },

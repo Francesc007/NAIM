@@ -1,132 +1,236 @@
-/**
- * AI Service — Groq (Llama) para sugerencias de outfit
- * Usa fetch nativo (sin groq-sdk) para compatibilidad con React Native.
- * Modelo: llama-3.3-70b-versatile
- */
+import { Garment } from '../types/garment';
+import { getGroqApiKey, GROQ_CHAT_COMPLETIONS_URL } from '../config/groq';
+import { fetchGroqWithRetry, groqErrorMessage } from './groqClient';
 
-import { env } from '../utils/env';
-
-const rawKey =
-  (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_GROQ_API_KEY) ||
-  env.GROQ_API_KEY ||
-  '';
-const API_KEY = rawKey.trim();
-const MODEL = 'llama-3.3-70b-versatile';
-const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-
-/** Prenda con datos para el prompt (categoría, ocasión, estación) */
-export interface GarmentForPrompt {
-  name: string;
-  category: string;
-  occasion: string;
-  season: string;
+export interface OutfitSuggestionResponse {
+  suggestions: {
+    garmentIds: string[];
+    reason: string;
+  }[];
 }
 
-const OCCASIONS = ['Casual', 'Formal', 'Deportivo', 'Trabajo', 'Ocasión Especial'];
+const GROQ_URL = GROQ_CHAT_COMPLETIONS_URL || 'https://api.groq.com/openai/v1/chat/completions';
 
-function buildSystemPrompt(weather?: { temp: number; condition: string }): string {
-  const weatherLine = weather
-    ? `CLIMA: ${weather.temp}°C, ${weather.condition}. Adapta: si hace frío (<15°C) incluye capa (chamarra/suéter); si calor (>28°C) prioriza prendas ligeras, sin capa.`
-    : 'No hay datos de clima.';
-  return `Eres un experto en moda y stylist profesional. Reglas ESTRICTAS:
-
-1. ${weatherLine}
-
-2. OCASIÓN: Si la ocasión es FORMAL, está PROHIBIDO sugerir jeans, prendas deportivas, camisetas casual o sneakers. Solo prendas elegantes y apropiadas.
-
-3. ESTRUCTURA DEL OUTFIT (4-5 piezas):
-   - OBLIGATORIOS: Top (camiseta/blusa), Bottom (pantalón/falda), Calzado
-   - OPCIONAL POR CLIMA: Capa (chamarra o suéter) solo si hace frío (<15°C)
-   - OPCIONAL POR ESTILO: Accesorio (lentes, gorra o bolsa) para dar personalidad
-   NUNCA repitas dos prendas de la misma categoría.
-
-4. COHERENCIA: Las prendas deben combinar en estilo, color y nivel de formalidad según la ocasión.
-
-5. PRIORIZA las prendas que ya están en el clóset del usuario (las que te pasamos). No inventes prendas.
-
-Responde en una sola frase corta y con estilo. Solo texto, sin formato.`;
+function normalizeForCompare(s: string): string {
+  return (s || '')
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
-function formatGarment(g: GarmentForPrompt): string {
-  const cat = g.category?.trim() || 'Sin categoría';
-  const occ = g.occasion?.trim() || 'Sin ocasión';
-  const sea = g.season?.trim() || 'Sin estación';
-  return `- ${g.name} (Categoría: ${cat}, Ocasión: ${occ}, Estación: ${sea})`;
+/** Solo prendas cuya occasion coincide con la solicitada o es universal ("todo el año"). */
+function isGarmentAllowedForOccasion(g: Garment, requestedOccasion: string): boolean {
+  const occ = normalizeForCompare(requestedOccasion);
+  const gOcc = normalizeForCompare(g.occasion || '');
+  const universal = normalizeForCompare('todo el año');
+  return gOcc === occ || gOcc === universal;
 }
 
-/** Contexto opcional de clima para adaptar sugerencias */
-export interface WeatherContext {
-  temp: number;
-  condition: string;
+function parseJsonFromContent(raw: string): OutfitSuggestionResponse | null {
+  let t = raw.trim();
+  const fence = /^```(?:json)?\s*/i;
+  if (fence.test(t)) {
+    t = t.replace(fence, '').replace(/\s*```\s*$/i, '');
+  }
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    t = t.slice(start, end + 1);
+  }
+  try {
+    const o = JSON.parse(t) as unknown;
+    if (!o || typeof o !== 'object') return null;
+    const rec = o as { suggestions?: unknown };
+    if (!Array.isArray(rec.suggestions)) return null;
+    return o as OutfitSuggestionResponse;
+  } catch {
+    try {
+      const fixed = t.replace(/,\s*([}\]])/g, '$1');
+      const o = JSON.parse(fixed) as OutfitSuggestionResponse;
+      if (!Array.isArray(o.suggestions)) return null;
+      return o;
+    } catch {
+      return null;
+    }
+  }
 }
 
-/**
- * Pide una recomendación de outfit.
- * Recibe prendas, ocasión y opcionalmente clima (temp, condition) para adaptar sugerencias.
- */
-export async function getOutfitSuggestion(
-  garments: GarmentForPrompt[],
+export async function getOutfitSuggestions(
+  inventory: Garment[],
   occasion: string,
-  weather?: WeatherContext
-): Promise<{ text: string } | { error: string }> {
-  if (!API_KEY) {
-    return { error: 'API key de Groq no configurada. Añade EXPO_PUBLIC_GROQ_API_KEY en .env' };
+  weather?: { temp: number; condition: string }
+): Promise<OutfitSuggestionResponse | { error: string }> {
+  const apiKey = getGroqApiKey();
+  if (!apiKey) {
+    return {
+      error:
+        'Groq no configurado: falta EXPO_PUBLIC_GROQ_API_KEY. Si usas APK de EAS, reconstruye con eas build --profile preview. Si usas Expo Go, verifica .env y reinicia npm start.',
+    };
   }
 
-  const valid = garments.filter(
-    (g) => g && typeof g.name === 'string' && g.name.trim().length > 0
-  );
-  if (valid.length < 1) {
-    return { error: 'Necesitas al menos 1 prenda con nombre válido' };
+  if (typeof GROQ_URL !== 'string' || GROQ_URL.length === 0) {
+    return { error: 'URL de Groq no configurada.' };
   }
 
-  const occasionLabel = OCCASIONS.find((o) => o.toLowerCase() === occasion.toLowerCase()) || occasion;
-  const garmentsList = valid.map(formatGarment).join('\n');
+  const allowedInventory = inventory.filter((g) => isGarmentAllowedForOccasion(g, occasion));
+  if (allowedInventory.length < 1) {
+    return {
+      error: `No hay prendas válidas para ocasión "${occasion}". Solo se permiten prendas etiquetadas "${occasion}" o "todo el año".`,
+    };
+  }
 
-  const userPrompt = `OCASIÓN SOLICITADA: ${occasionLabel}
+  const temp = weather?.temp;
+  const coldRule =
+    typeof temp === 'number' && temp < 18
+      ? `Si la temperatura es MENOR a 18°C (ahora: ${temp}°C), cada outfit DEBE incluir OBLIGATORIAMENTE una prenda cuya categoría sea exactamente "abrigo" o "chamarra" (elige IDs que existan en el inventario). Si no hay ninguna abrigo/chamarra en el inventario, indícalo brevemente en la "reason" de esa opción y usa solo top+bottom+calzado.`
+      : 'Temperatura ≥ 18°C o desconocida: no añadas capa de abrigo salvo que encaje con el look.';
 
-PRENDAS DISPONIBLES (del clóset del usuario, ya filtradas para esta ocasión):
-${garmentsList}
+  // CAUSA RAÍZ: el LLM no puede copiar UUIDs largos verbatim → solo sobreviven unas pocas prendas.
+  // Solución: mapear a IDs cortos secuenciales (1..N) y remapear la respuesta a los UUID reales.
+  const shortIdToReal = new Map<string, string>();
+  const inventoryForPrompt = allowedInventory.map((g, idx) => {
+    const shortId = String(idx + 1);
+    shortIdToReal.set(shortId, g.id);
+    return {
+      id: shortId,
+      name: g.name,
+      category: g.category,
+      subcategory: g.subcategory ?? null,
+      colors: g.colors,
+      occasion: g.occasion,
+      season: g.season,
+    };
+  });
 
-Estas prendas ya fueron seleccionadas para el outfit. Da tu recomendación en una frase corta: por qué combinan bien, el estilo que logran, o un detalle que destaque. Prioriza SIEMPRE prendas que existan en esta lista.`;
+  let inventoryJson: string;
+  try {
+    inventoryJson = JSON.stringify(inventoryForPrompt);
+  } catch {
+    return { error: 'No se pudo serializar el inventario para el Stylist.' };
+  }
 
-  const systemPrompt = buildSystemPrompt(weather);
+  const weatherLine = weather ? `${weather.temp}°C, ${weather.condition}` : 'Desconocido';
+
+  const prompt: string = [
+    'Eres un STYLIST PROFESIONAL. Tu prioridad absoluta es la coherencia de estilo y el cumplimiento estricto de la ocasión.',
+    `Ocasión solicitada: "${occasion}".`,
+    `Clima actual: ${weatherLine}.`,
+    coldRule,
+    '',
+    'INVENTARIO PERMITIDO (JSON — cada prenda ya fue filtrada por ocasión):',
+    inventoryJson,
+    '',
+    'REGLAS ESTRICTAS DE OCASIÓN (INCUMPLIR = RESPUESTA INVÁLIDA):',
+    `1. SOLO puedes seleccionar prendas cuyo campo "occasion" sea EXACTAMENTE "${occasion}" o EXACTAMENTE "todo el año".`,
+    '2. PROHIBIDO mezclar estilos: no uses prendas "deportivo" en looks casual/formal/trabajo, ni formales en casual/deportivo, etc.',
+    '3. Antes de proponer CADA outfit, LEE obligatoriamente category, subcategory (si no es null), occasion y season de TODAS las prendas candidatas.',
+    '4. Verifica coherencia entre category y subcategory (ej. no combines piezas claramente deportivas con un look formal).',
+    '',
+    'REGLAS DE COMBINACIÓN:',
+    '1. Recorre TODO el JSON hasta el último objeto. No te limites a las primeras prendas.',
+    '2. Crea 3 outfits COMPLETAMENTE DIFERENTES entre sí.',
+    '3. Prohibido repetir la misma prenda en más de una opción.',
+    '4. Cada outfit debe incluir las piezas necesarias (top + bottom o vestido, más calzado si hay en inventario).',
+    '',
+    'IMPORTANTE: usa EXACTAMENTE los valores del campo "id" del inventario (números cortos como "1", "2", "3"). NO inventes IDs.',
+    '',
+    'FORMATO DE RESPUESTA (JSON PURO):',
+    '{',
+    '  "suggestions": [',
+    '    { "garmentIds": ["1", "2", "3"], "reason": "Explicación chic (máx 15 palabras)" },',
+    '    { "garmentIds": ["4", "5", "6"], "reason": "Explicación chic (máx 15 palabras)" },',
+    '    { "garmentIds": ["7", "8", "9"], "reason": "Explicación chic (máx 15 palabras)" }',
+    '  ]',
+    '}',
+  ].join('\n');
+
+  const GROQ_API_KEY = apiKey;
+
+  const requestPayload = {
+    model: 'llama-3.3-70b-versatile',
+    messages: [
+      {
+        role: 'system' as const,
+        content:
+          'Eres un experto en moda que SOLO responde en JSON válido. Obedece al 100% las reglas de ocasión y coherencia de estilo del usuario. Nunca mezcles prendas de ocasiones incompatibles.',
+      },
+      { role: 'user' as const, content: prompt },
+    ],
+    temperature: 0.3,
+    seed: Math.floor(Math.random() * 1000000),
+    response_format: { type: 'json_object' as const },
+    presence_penalty: 1.0,
+    frequency_penalty: 1.0,
+  };
+
+  let bodyString: string;
+  try {
+    bodyString = JSON.stringify(requestPayload);
+  } catch {
+    return { error: 'No se pudo serializar el cuerpo de la petición al Stylist.' };
+  }
+
+  if (typeof bodyString !== 'string' || bodyString.length === 0) {
+    return { error: 'Cuerpo de petición inválido.' };
+  }
+
+  const requestHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${GROQ_API_KEY}`,
+  };
 
   try {
-    const res = await fetch(API_URL, {
+    console.log('4. Enviando payload a Groq con Seed:', requestPayload.seed);
+    console.log('   Inventario corto enviado (id → nombre):', inventoryForPrompt.map((g) => `${g.id}:${g.name}`));
+
+    const response = await fetchGroqWithRetry(GROQ_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        max_completion_tokens: 120,
-        temperature: 0.5,
-      }),
+      headers: requestHeaders,
+      body: bodyString,
     });
 
-    const data = await res.json();
-
-    if (!res.ok) {
-      const msg = data?.error?.message ?? data?.message ?? `HTTP ${res.status}`;
-      const is429 = res.status === 429 || String(msg).includes('429');
-      return {
-        error: is429
-          ? 'Límite de velocidad. Espera 5 segundos e intenta de nuevo.'
-          : `Error: ${msg}`,
-      };
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const apiMsg = (errorData as { error?: { message?: string } })?.error?.message;
+      console.warn('[NAIM] Groq stylist falló:', response.status, apiMsg ?? errorData);
+      return { error: groqErrorMessage(response.status, apiMsg) };
     }
 
-    const text = data?.choices?.[0]?.message?.content?.trim();
-    if (!text) return { error: 'Respuesta vacía de Groq' };
-    return { text };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { error: `Error: ${msg}` };
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+    console.log('5. Respuesta cruda de la IA (Content):', content);
+    if (typeof content !== 'string' || !content.trim()) {
+      return { error: 'Respuesta vacía del stylist.' };
+    }
+
+    const parsed = parseJsonFromContent(content);
+    if (!parsed?.suggestions?.length) {
+      return { error: 'No se pudo leer la respuesta del stylist.' };
+    }
+
+    // Remapear IDs cortos (1..N) → UUIDs reales. Descarta IDs inventados o fuera de ocasión.
+    const realIdToGarment = new Map(allowedInventory.map((g) => [g.id, g]));
+    const remapped: OutfitSuggestionResponse = {
+      suggestions: parsed.suggestions.map((s) => ({
+        garmentIds: (Array.isArray(s.garmentIds) ? s.garmentIds : [])
+          .map((sid) => shortIdToReal.get(String(sid)))
+          .filter((id): id is string => {
+            if (!id) return false;
+            const garment = realIdToGarment.get(id);
+            return Boolean(garment && isGarmentAllowedForOccasion(garment, occasion));
+          }),
+        reason: s.reason,
+      })),
+    };
+    console.log(
+      '6. IDs reales remapeados por outfit:',
+      remapped.suggestions.map((s) => s.garmentIds)
+    );
+
+    return remapped;
+  } catch (error) {
+    console.warn('AI Service Error:', error);
+    return { error: 'Error de conexión con el Stylist. Verifica tu red o API Key.' };
   }
 }

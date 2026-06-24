@@ -8,7 +8,7 @@ import {
   UIManager,
   View,
 } from 'react-native';
-import { colors } from '../theme/colors';
+import { colors, radius, spacing, typography } from '../theme';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -97,22 +97,22 @@ export function ExpandableSelector({
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   header: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'space-between' as const,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.outline + '50',
+    borderColor: colors.border,
   },
   label: {
     fontSize: 14,
-    fontWeight: '600' as const,
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.onSurface,
   },
   headerRight: {
@@ -121,7 +121,8 @@ const styles = StyleSheet.create({
   },
   selectedText: {
     fontSize: 14,
-    color: colors.primary,
+    color: colors.textSecondary,
+    fontFamily: typography.fontFamily.regular,
     textTransform: 'capitalize' as const,
   },
   chevron: {
@@ -132,27 +133,32 @@ const styles = StyleSheet.create({
   optionsGrid: {
     flexDirection: 'row' as const,
     flexWrap: 'wrap' as const,
-    marginTop: 12,
+    marginTop: spacing.sm,
     paddingHorizontal: 4,
     marginHorizontal: -4,
   },
   chip: {
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.md,
     paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: colors.outline + '30',
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryMuted,
     marginRight: 8,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   chipActive: {
     backgroundColor: colors.primary,
+    borderColor: colors.primaryVariant,
   },
   chipText: {
     fontSize: 14,
+    fontFamily: typography.fontFamily.regular,
     color: colors.onSurface,
     textTransform: 'capitalize' as const,
   },
   chipTextActive: {
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.onPrimary,
   },
 });

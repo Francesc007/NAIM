@@ -7,6 +7,12 @@ export const colors = {
   background: '#F8F9FA',      // Off-white
   text: '#212529',            // Gris oscuro elegante
   accent: '#DDBEA9',          // Rosa viejo / Blush
+  surfaceElevated: '#FFFFFF',
+  border: '#E9ECEF',
+  overlay: 'rgba(0,0,0,0.45)',
+  textPrimary: '#212529',
+  textSecondary: '#495057',
+  primaryMuted: '#F3E7DF',
 
   // Compatibilidad con componentes existentes
   primary: '#DDBEA9',

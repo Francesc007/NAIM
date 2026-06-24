@@ -2,8 +2,28 @@
  * Configuración global de Expo.
  * Las variables EXPO_PUBLIC_* se cargan desde .env y se pasan a extra
  * para persistencia (Constants.expoConfig.extra).
- * Mantén .env actualizado con EXPO_PUBLIC_GROQ_API_KEY.
  */
+const path = require('path');
+
+try {
+  require('@expo/env').load(path.resolve(__dirname, '.env'));
+} catch {
+  // @expo/env viene con el CLI de Expo
+}
+
+const groqKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+const weatherKey = process.env.EXPO_PUBLIC_WEATHER_API_KEY;
+
+if (!groqKey || !weatherKey) {
+  console.warn(
+    '[NAIM app.config] ⚠️ Faltan keys en .env — Groq:',
+    groqKey ? 'OK' : 'FALTA',
+    '| Weather:',
+    weatherKey ? 'OK' : 'FALTA'
+  );
+  console.warn('[NAIM app.config] Copia .env.example → .env y reinicia Metro (npm start)');
+}
+
 module.exports = {
   expo: {
     name: 'NAIM',
@@ -25,7 +45,12 @@ module.exports = {
       backgroundColor: '#ffffff',
     },
     ios: {
+      bundleIdentifier: 'com.frank714mos.naim',
       supportsTablet: true,
+      infoPlist: {
+        CFBundleDevelopmentRegion: 'es',
+        CFBundleLocalizations: ['es'],
+      },
     },
     android: {
       package: 'com.frank714mos.naim',
@@ -54,6 +79,7 @@ module.exports = {
       [
         'expo-image-picker',
         {
+          photosPermission: 'NAIM necesita acceso a tus fotos para añadir prendas a tu guardarropa.',
           colors: {
             cropBackgroundColor: '#F8F9FA',
             cropToolbarColor: '#DDBEA9',
@@ -63,6 +89,7 @@ module.exports = {
           },
         },
       ],
+      './plugins/withSpanishUcropStrings.js',
     ],
     extra: {
       eas: {

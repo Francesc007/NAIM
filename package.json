@@ -3,13 +3,15 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --go",
     "start:dev": "expo start --dev-client",
+    "start:lan": "expo start --go --lan --clear",
     "web": "expo start --web --port 8082",
     "web:open": "expo start --web --port 8082 --open",
-    "tunnel": "expo start --tunnel",
-    "android": "expo start --android",
-    "ios": "expo start --ios"
+    "tunnel": "expo start --tunnel --go --clear",
+    "phone": "expo start --tunnel --go --clear",
+    "android": "expo start --go --android",
+    "ios": "expo start --go --ios"
   },
   "dependencies": {
     "@expo-google-fonts/gfs-didot": "^0.4.1",

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Garment } from '../types/garment';
 import { garmentRepository } from './garmentRepository';
-import { getOutfitSuggestion, GarmentForPrompt } from './aiService';
+import { getOutfitSuggestions } from './aiService';
 
 export interface OutfitSuggestion {
   garments: Garment[];
@@ -10,13 +10,6 @@ export interface OutfitSuggestion {
 
 const CACHE_KEY_PREFIX = 'suggestion_cache_';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
-
-/** Categorías: superior, inferior, calzado, capa, accesorio */
-const CAT_TOP = ['camiseta', 'vestido'];
-const CAT_BOTTOM = ['pantalón', 'falda'];
-const CAT_SHOES = ['calzado'];
-const CAT_LAYER = ['chamarra', 'suéter'];
-const CAT_ACCESSORY = ['accesorio'];
 
 function getDateKey(): string {
   const d = new Date();
@@ -39,10 +32,13 @@ async function getCachedSuggestion(occasion: string): Promise<OutfitSuggestion[]
 async function setCachedSuggestion(occasion: string, suggestions: OutfitSuggestion[]): Promise<void> {
   try {
     const key = `${CACHE_KEY_PREFIX}${getDateKey()}_${occasion}`;
-    await AsyncStorage.setItem(key, JSON.stringify({
-      suggestions,
-      cachedAt: Date.now(),
-    }));
+    await AsyncStorage.setItem(
+      key,
+      JSON.stringify({
+        suggestions,
+        cachedAt: Date.now(),
+      })
+    );
   } catch {
     // ignorar fallos de caché
   }
@@ -77,86 +73,44 @@ function filterByOccasion(garments: Garment[], occasion: string): Garment[] {
   });
 }
 
-function normCat(c: string): string {
-  return (c || '').toLowerCase().trim();
-}
-
-/**
- * Selecciona outfit: Top, Bottom, Calzado (obligatorios) + Capa (si clima frío) + Accesorio (opcional).
- * Vestido cuenta como superior+inferior.
- * Prioriza prendas del clóset (ya filtradas por Supabase/local).
- */
-function selectOutfitPieces(
-  garments: Garment[],
-  isCold: boolean
-): { selected: Garment[]; missing: string[] } {
-  const tops = garments.filter((g) => CAT_TOP.includes(normCat(g.category)));
-  const bottoms = garments.filter((g) => CAT_BOTTOM.includes(normCat(g.category)));
-  const shoes = garments.filter((g) => CAT_SHOES.includes(normCat(g.category)));
-  const layers = garments.filter((g) => CAT_LAYER.includes(normCat(g.category)));
-  const accessories = garments.filter((g) => CAT_ACCESSORY.includes(normCat(g.category)));
-
-  const selected: Garment[] = [];
-  const missing: string[] = [];
-
-  // Vestido reemplaza top + bottom
-  const vestidos = garments.filter((g) => normCat(g.category) === 'vestido');
-  if (vestidos.length > 0) {
-    selected.push(vestidos[0]);
-    if (shoes.length > 0) selected.push(shoes[0]);
-    else {
-      return { selected, missing: ['Calzado'] };
-    }
-  } else {
-    if (tops.length > 0) selected.push(tops[0]);
-    else missing.push('Top (camiseta)');
-    if (bottoms.length > 0) selected.push(bottoms[0]);
-    else missing.push('Bottom (pantalón, falda)');
-    if (shoes.length > 0) selected.push(shoes[0]);
-    else missing.push('Calzado');
-  }
-
-  if (missing.length > 0) return { selected, missing };
-
-  // Capa: chamarra/suéter si hace frío (<15°C)
-  if (isCold && layers.length > 0) {
-    selected.push(layers[0]);
-  }
-
-  // Accesorio: lentes, gorra o bolsa (por estilo)
-  if (accessories.length > 0) {
-    selected.push(accessories[0]);
-  }
-
-  return { selected, missing };
-}
-
-function toGarmentForPrompt(g: Garment): GarmentForPrompt {
-  return {
-    name: g.name.trim(),
-    category: g.category || '',
-    occasion: g.occasion || '',
-    season: g.season || '',
-  };
-}
-
 /** Contexto de clima opcional para adaptar sugerencias a la IA */
 export interface WeatherContext {
   temp: number;
   condition: string;
 }
 
+export interface GenerateSuggestionsOptions {
+  /** Si el usuario pide otra sugerencia: nueva llamada a la IA (sin caché). */
+  previousReason?: string;
+  /** 0 = primera combinación; al subir, alterna en la IA. */
+  variationIndex?: number;
+  /** Ignora caché y fuerza nueva llamada a Groq. */
+  forceRefresh?: boolean;
+  /** Inventario ya mezclado desde el cliente; si existe, se usa sin filtrar por ocasión. */
+  garmentsOverride?: Garment[];
+}
+
 /**
- * Genera una sugerencia: filtra por ocasión, aplica regla de 3 piezas, llama a Groq.
- * Si se pasa weather, Groq adapta (ej: no bermudas si hace 10°C).
+ * Genera sugerencias: filtra por ocasión, llama a Groq con inventario y mapea IDs → prendas.
  */
 export async function generateSuggestions(
   occasion = 'casual',
-  weather?: WeatherContext
+  weather?: WeatherContext,
+  options?: GenerateSuggestionsOptions
 ): Promise<{ suggestions: OutfitSuggestion[]; error?: string }> {
-  const cached = await getCachedSuggestion(occasion);
-  if (cached && cached.length > 0) {
-    return { suggestions: cached };
+  console.log('=== INICIO AUDITORÍA DE MOTOR ===');
+  console.log('1. Total prendas recibidas del Front (garmentsOverride):', options?.garmentsOverride?.length || 0);
+
+  const skipCache =
+    Boolean(options?.forceRefresh) ||
+    Boolean(options?.previousReason?.trim()) ||
+    (options?.variationIndex ?? 0) > 0 ||
+    Boolean(options?.garmentsOverride?.length);
+  if (!skipCache) {
+    const cached = await getCachedSuggestion(occasion);
+    if (cached && cached.length > 0) {
+      return { suggestions: cached };
+    }
   }
 
   const { getInventoryFromSupabase } = await import('./databaseService');
@@ -168,34 +122,51 @@ export async function generateSuggestions(
   const valid = filterValidGarments(all);
   if (valid.length < 1) return { suggestions: [] };
 
-  // 1. Filtrar por ocasión seleccionada
-  let filtered = filterByOccasion(valid, occasion);
-  if (filtered.length < 1) {
-    return {
-      suggestions: [],
-      error: `No tienes prendas para ocasión "${occasion}". Añade ropa etiquetada para esta ocasión.`,
-    };
+  let filtered: Garment[];
+
+  if (options?.garmentsOverride && options.garmentsOverride.length > 0) {
+    filtered = options.garmentsOverride;
+  } else {
+    filtered = filterByOccasion(valid, occasion);
+    if (filtered.length < 1) {
+      return {
+        suggestions: [],
+        error: `No tienes prendas para ocasión "${occasion}". Añade ropa etiquetada para esta ocasión.`,
+      };
+    }
+    filtered = [...filtered].sort(() => Math.random() - 0.5);
   }
 
-  // 2. Selección: Top, Bottom, Calzado (obligatorios) + Capa (si frío) + Accesorio (opcional)
-  const isCold = weather ? weather.temp < 15 : false;
-  const { selected, missing } = selectOutfitPieces(filtered, isCold);
-  if (missing.length > 0) {
-    return {
-      suggestions: [],
-      error: `Faltan prendas: ${missing.join(', ')}. Añade al menos una de cada tipo para esta ocasión.`,
-    };
-  }
+  console.log('2. Prendas disponibles después del filtro de clima:', filtered.length);
+  console.log('3. IDs listos para enviar a Groq:', filtered.map((g) => g.id));
 
-  const forPrompt = selected.map(toGarmentForPrompt);
-  const result = await getOutfitSuggestion(forPrompt, occasion, weather);
+  const result = await getOutfitSuggestions(filtered, occasion, weather);
 
   if ('error' in result) {
+    const cached = await getCachedSuggestion(occasion);
+    if (cached && cached.length > 0) {
+      return {
+        suggestions: cached,
+        error:
+          'Mostrando sugerencias guardadas. El Stylist no respondió; pulsa «Tres opciones nuevas» para reintentar.',
+      };
+    }
     return { suggestions: [], error: result.error };
   }
 
-  const suggestions: OutfitSuggestion[] = [{ garments: selected, reason: result.text }];
-  await setCachedSuggestion(occasion, suggestions);
+  // Mapeo robusto: busca primero en el set realmente enviado (filtered) y luego en valid.
+  const lookup = new Map<string, Garment>();
+  for (const g of valid) lookup.set(g.id, g);
+  for (const g of filtered) lookup.set(g.id, g);
 
-  return { suggestions };
+  const finalSuggestions: OutfitSuggestion[] = result.suggestions.map((s) => ({
+    garments: s.garmentIds
+      .map((id) => lookup.get(id))
+      .filter(Boolean) as Garment[],
+    reason: s.reason,
+  }));
+
+  await setCachedSuggestion(occasion, finalSuggestions);
+
+  return { suggestions: finalSuggestions };
 }

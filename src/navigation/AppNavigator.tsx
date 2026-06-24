@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Text, View, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -10,9 +10,10 @@ import { AddGarmentScreen } from '../screens/AddGarmentScreen';
 import { SuggestionsScreen } from '../screens/SuggestionsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { GarmentProvider } from '../context/GarmentContext';
-import { colors } from '../theme/colors';
-import { typography } from '../theme/typography';
 import { HomeHeader } from '../components/HomeHeader';
+import { NavGradientBackground } from '../components/NavGradientBackground';
+import { colors, shadows, spacing, typography } from '../theme';
+import { useTabBarBottomInset } from '../hooks/useTabBarBottomInset';
 import type { RootStackParamList, TabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -24,22 +25,63 @@ const headerTitleStyle = {
   letterSpacing: 2,
 };
 
+const tabBarLabelStyle = {
+  fontSize: 12,
+  fontFamily: typography.fontFamily.regular,
+  marginTop: 2,
+};
+
+function RenderTabBarLabel({
+  focused,
+  label,
+}: {
+  focused: boolean;
+  label: string;
+}) {
+  return (
+    <Text
+      style={{
+        fontSize: 12,
+        marginTop: 2,
+        fontFamily: focused ? typography.fontFamily.semiBold : typography.fontFamily.regular,
+        color: focused ? colors.primaryVariant : colors.textSecondary,
+      }}
+    >
+      {label}
+    </Text>
+  );
+}
+
 function AddTabScreen() {
   return <AddGarmentScreen hideBottomNav />;
 }
 
 function MainTabs() {
+  const bottomInset = useTabBarBottomInset();
+  const tabBarContentHeight = 56;
+  const androidLift = Platform.OS === 'android' ? spacing.xs : 0;
+
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: '#ADB5BD',
-        tabBarStyle: styles.tabBar,
-        tabBarShowLabel: false,
-        headerStyle: { backgroundColor: colors.accent },
-        headerTintColor: colors.text,
+        tabBarActiveTintColor: colors.primaryVariant,
+        tabBarInactiveTintColor: colors.primaryVariant,
+        tabBarStyle: {
+          ...styles.tabBar,
+          height: tabBarContentHeight + bottomInset + androidLift,
+          paddingBottom: bottomInset + androidLift,
+          paddingTop: spacing.xs,
+          marginBottom: Platform.OS === 'android' ? 2 : 0,
+        },
+        tabBarShowLabel: true,
+        tabBarLabelStyle,
+        headerStyle: styles.header,
+        headerBackground: () => <NavGradientBackground />,
+        headerTintColor: colors.textPrimary,
         headerTitleAlign: 'center',
         headerTitleStyle,
+        headerShadowVisible: false,
+        tabBarBackground: () => <NavGradientBackground />,
       }}
     >
       <Tab.Screen
@@ -48,12 +90,9 @@ function MainTabs() {
         options={{
           headerTitle: () => <HomeHeader />,
           headerTitleContainerStyle: { width: '100%', left: 0, right: 0 },
-          tabBarIcon: ({ focused }) => (
-            <Ionicons
-              name="sparkles"
-              size={24}
-              color={focused ? colors.accent : '#ADB5BD'}
-            />
+          tabBarLabel: ({ focused }) => <RenderTabBarLabel focused={focused} label="Inicio" />,
+          tabBarIcon: () => (
+            <Ionicons name="sparkles" size={24} color={colors.primaryVariant} />
           ),
         }}
       />
@@ -61,13 +100,14 @@ function MainTabs() {
         name="Add"
         component={AddTabScreen}
         options={{
-          title: 'Añadir prenda',
+          title: 'Añadir Prenda',
           headerShown: true,
           headerBackVisible: false,
           headerLeft: () => null,
+          tabBarLabel: () => null,
           tabBarIcon: () => (
             <View style={styles.addTabIcon}>
-              <Ionicons name="add" size={28} color="#fff" />
+              <Ionicons name="add" size={28} color={colors.onPrimary} />
             </View>
           ),
         }}
@@ -77,12 +117,11 @@ function MainTabs() {
         component={WardrobeScreen}
         options={{
           title: 'Mi Colección',
-          tabBarIcon: ({ focused }) => (
-            <Ionicons
-              name="shirt-outline"
-              size={24}
-              color={focused ? colors.accent : '#ADB5BD'}
-            />
+          tabBarLabel: ({ focused }) => (
+            <RenderTabBarLabel focused={focused} label="Mi Colección" />
+          ),
+          tabBarIcon: () => (
+            <Ionicons name="shirt-outline" size={24} color={colors.primaryVariant} />
           ),
           headerRight: () => null,
         }}
@@ -97,10 +136,12 @@ export function AppNavigator() {
       <NavigationContainer>
         <Stack.Navigator
           screenOptions={{
-            headerStyle: { backgroundColor: colors.accent },
-            headerTintColor: colors.text,
+            headerStyle: styles.header,
+            headerBackground: () => <NavGradientBackground />,
+            headerTintColor: colors.textPrimary,
             headerTitleAlign: 'center',
             headerTitleStyle,
+            headerShadowVisible: false,
           }}
         >
           <Stack.Screen
@@ -112,7 +153,7 @@ export function AppNavigator() {
             name="AddGarment"
             component={AddGarmentScreen}
             options={{
-              title: 'Añadir prenda',
+              title: 'Añadir Prenda',
               headerBackVisible: false,
               headerLeft: () => null,
             }}
@@ -121,7 +162,7 @@ export function AppNavigator() {
             name="Suggestions"
             component={SuggestionsScreen}
             options={{
-              title: 'Sugerencias de hoy',
+              title: 'Sugerencias de Hoy',
               headerBackVisible: false,
               headerLeft: () => null,
             }}
@@ -129,7 +170,7 @@ export function AppNavigator() {
           <Stack.Screen
             name="Settings"
             component={SettingsScreen}
-            options={{ title: 'Configuración' }}
+            options={{ title: 'Ajustes de Perfil' }}
           />
         </Stack.Navigator>
       </NavigationContainer>
@@ -138,23 +179,25 @@ export function AppNavigator() {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    backgroundColor: 'transparent',
+  },
   tabBar: {
-    backgroundColor: '#fff',
-    borderTopColor: '#E9ECEF',
+    backgroundColor: 'transparent',
+    borderTopColor: colors.border,
     borderTopWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 8,
+    ...shadows.elevated,
   },
   addTabIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.primaryVariant,
+    ...shadows.card,
   },
 });

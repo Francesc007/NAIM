@@ -150,7 +150,7 @@ export function GarmentDetailModal({
                 style={styles.trashBtn}
                 onPress={handleDelete}
               >
-                <Ionicons name="trash-outline" size={24} color="#ADB5BD" />
+                <Ionicons name="trash-outline" size={24} color={colors.primaryVariant} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
@@ -184,11 +184,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 24,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.25,
-    shadowRadius: 24,
-    elevation: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(221, 190, 169, 0.85)',
+    shadowColor: colors.primaryVariant,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.32,
+    shadowRadius: 16,
+    elevation: 8,
   },
   closeBtn: {
     position: 'absolute',

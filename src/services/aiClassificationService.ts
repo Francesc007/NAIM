@@ -1,5 +1,11 @@
 import { Platform } from 'react-native';
 import { GARMENT_TYPES, OCCASIONS, SEASONS } from '../config/categories';
+import {
+  getGroqApiKey,
+  GROQ_CHAT_COMPLETIONS_URL,
+  GROQ_VISION_MODEL,
+} from '../config/groq';
+import { fetchGroqWithRetry, groqErrorMessage } from './groqClient';
 
 export interface ClassificationResult {
   category: string;
@@ -11,20 +17,23 @@ export interface ClassificationResult {
 }
 
 /**
- * Clasificación de prendas por IA
- * MVP: con EXPO_PUBLIC_OPENAI_API_KEY usa OpenAI Vision; si no, valores por defecto
+ * Clasificación de prendas por IA (visión) con Groq — misma API key que sugerencias de outfit.
+ * Sin clave o si falla la petición: valores por defecto.
  */
 export async function classifyImage(imageUri: string): Promise<ClassificationResult> {
-  const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+  const apiKey = getGroqApiKey();
 
   if (apiKey) {
     try {
-      return await classifyWithOpenAI(imageUri, apiKey);
-    } catch {
+      return await classifyWithGroq(imageUri, apiKey);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[NAIM] Clasificación IA (Groq visión):', msg);
       return getDefaultClassification();
     }
   }
 
+  console.warn('[NAIM] Clasificación IA: sin EXPO_PUBLIC_GROQ_API_KEY');
   return getDefaultClassification();
 }
 
@@ -47,20 +56,38 @@ async function uriToDataUrl(uri: string): Promise<string> {
   return `data:image/jpeg;base64,${base64}`;
 }
 
-async function classifyWithOpenAI(
+/** Extrae JSON del texto del modelo (puede venir con ```json```). */
+function parseJsonFromModelContent(content: string): Record<string, unknown> {
+  const cleaned = content.replace(/```\w*\n?/g, '').trim();
+  try {
+    return JSON.parse(cleaned) as Record<string, unknown>;
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]) as Record<string, unknown>;
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error('Respuesta no es JSON válido');
+  }
+}
+
+async function classifyWithGroq(
   imageUri: string,
   apiKey: string
 ): Promise<ClassificationResult> {
   const dataUrl = await uriToDataUrl(imageUri);
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetchGroqWithRetry(GROQ_CHAT_COMPLETIONS_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: GROQ_VISION_MODEL,
       messages: [
         {
           role: 'user',
@@ -84,24 +111,38 @@ async function classifyWithOpenAI(
           ],
         },
       ],
-      max_tokens: 300,
+      max_completion_tokens: 1024,
+      temperature: 0.3,
     }),
   });
 
-  if (!response.ok) throw new Error('OpenAI request failed');
+  const data = await response.json().catch(() => ({}));
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content ?? '{}';
-  const cleaned = content.replace(/```\w*\n?/g, '').trim();
-  const parsed = JSON.parse(cleaned);
+  if (!response.ok) {
+    const msg =
+      (data as { error?: { message?: string } })?.error?.message ??
+      (data as { message?: string })?.message;
+    throw new Error(groqErrorMessage(response.status, msg));
+  }
+
+  const content = (data as { choices?: { message?: { content?: string } }[] })
+    ?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== 'string') {
+    throw new Error('Respuesta vacía de Groq (visión)');
+  }
+
+  const parsed = parseJsonFromModelContent(content);
 
   return {
-    category: validateCategory(parsed.category),
-    subcategory: parsed.subcategory,
-    colors: Array.isArray(parsed.colors) ? parsed.colors.slice(0, 3) : ['negro'],
-    occasion: validateOccasion(parsed.occasion),
-    season: validateSeason(parsed.season),
-    suggestedName: parsed.suggestedName ?? 'Prenda',
+    category: validateCategory(parsed.category as string | undefined),
+    subcategory: parsed.subcategory as string | undefined,
+    colors: Array.isArray(parsed.colors)
+      ? (parsed.colors as string[]).slice(0, 3)
+      : ['negro'],
+    occasion: validateOccasion(parsed.occasion as string | undefined),
+    season: validateSeason(parsed.season as string | undefined),
+    suggestedName:
+      typeof parsed.suggestedName === 'string' ? parsed.suggestedName : 'Prenda',
   };
 }
 

@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Garment } from '../types/garment';
 import { getOrCreateDeviceId, getGarmentsStorageKey } from './deviceIdService';
+import { saveImageForGarment } from '../utils/platformStorage';
+import { uploadGarmentImage, deleteGarmentImage } from './imageStorageService';
 
 const LEGACY_KEY = 'guardarropa_garments';
 
@@ -52,13 +54,33 @@ export const garmentRepository = {
 
   async add(garment: Garment): Promise<void> {
     const { saveGarmentToSupabase } = await import('./databaseService');
-    await saveGarmentToSupabase(garment);
+
+    let imagePath = garment.imagePath;
+    try {
+      if (!imagePath.startsWith('http')) {
+        const localPath = imagePath.startsWith('file://') || imagePath.startsWith('/')
+          ? imagePath
+          : await saveImageForGarment(garment.imagePath, garment.id);
+        imagePath = await uploadGarmentImage(localPath, garment.id);
+      }
+    } catch (err) {
+      console.warn('[NAIM] Upload Storage falló, guardando ruta local:', err);
+    }
+
+    const garmentWithUrl: Garment = { ...garment, imagePath };
+    await saveGarmentToSupabase(garmentWithUrl);
     const all = await this.getAll();
-    all.push(garment);
+    all.push(garmentWithUrl);
     await saveGarments(all);
   },
 
   async update(garment: Garment): Promise<void> {
+    const { updateGarmentInSupabase } = await import('./databaseService');
+    try {
+      await updateGarmentInSupabase(garment);
+    } catch (err) {
+      console.warn('[NAIM] Sync update Supabase:', err);
+    }
     const all = await this.getAll();
     const i = all.findIndex((g) => g.id === garment.id);
     if (i >= 0) {
@@ -68,8 +90,19 @@ export const garmentRepository = {
   },
 
   async delete(id: string): Promise<void> {
-    const all = (await this.getAll()).filter((g) => g.id !== id);
-    await this.save(all);
+    const { deleteGarmentFromSupabase } = await import('./databaseService');
+    const all = await this.getAll();
+    const garment = all.find((g) => g.id === id);
+    try {
+      if (garment?.imagePath) {
+        await deleteGarmentImage(garment.imagePath);
+      }
+      await deleteGarmentFromSupabase(id);
+    } catch (err) {
+      console.warn('[NAIM] Sync delete Supabase:', err);
+    }
+    const filtered = all.filter((g) => g.id !== id);
+    await this.save(filtered);
   },
 
   async markWorn(id: string): Promise<void> {

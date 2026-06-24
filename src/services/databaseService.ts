@@ -112,3 +112,21 @@ export async function saveGarmentToSupabase(garment: Garment): Promise<void> {
   const { error } = await supabase.from('items').upsert(row, { onConflict: 'id' });
   if (error) throw new Error(`Supabase: ${error.message}`);
 }
+
+/**
+ * Actualiza una prenda en Supabase (upsert).
+ */
+export async function updateGarmentInSupabase(garment: Garment): Promise<void> {
+  await saveGarmentToSupabase(garment);
+}
+
+/**
+ * Elimina una prenda de Supabase por id.
+ */
+export async function deleteGarmentFromSupabase(id: string): Promise<void> {
+  if (!supabase) return;
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+  const { error } = await supabase.from('items').delete().eq('id', id).eq('user_id', userId);
+  if (error) throw new Error(`Supabase delete: ${error.message}`);
+}

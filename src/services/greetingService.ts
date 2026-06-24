@@ -25,11 +25,11 @@ const WEATHER_MESSAGES: Record<string, string[]> = {
   ],
   cloudy: [
     'Cielo gris, estilo nítido.',
-    'Día de capas sutiles.',
+    'Día para jugar con texturas sin complicarte.',
     'El clima pide versatilidad.',
   ],
   rainy: [
-    'Día de capas y paraguas, elige algo resistente.',
+    'Lluvia afuera: algo que se seque rápido y te deje cómodo.',
     'Lluvia afuera, estilo impecable adentro.',
     'Protección con estilo.',
   ],
@@ -42,7 +42,7 @@ const WEATHER_MESSAGES: Record<string, string[]> = {
     'Frío afuera, calidez en tu look.',
   ],
   foggy: [
-    'Niebla de mañana, capas de estilo.',
+    'Mañana suave, buen día para tonos neutros.',
     'Día suave para looks neutros.',
   ],
   default: [
@@ -55,7 +55,7 @@ const WEATHER_MESSAGES: Record<string, string[]> = {
 const COLD_MESSAGES = [
   'Momento de sacar esa chamarra favorita.',
   'Abrígate con estilo.',
-  'Capas que suman.',
+  'Hace frío: algo que te abrigue sin verte cargado.',
 ];
 
 /** Mensajes extra para calor (> 28°C) */

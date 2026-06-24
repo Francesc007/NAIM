@@ -1,11 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -14,40 +13,109 @@ import { useWeather } from '../context/WeatherContext';
 import { generateSuggestions, OutfitSuggestion } from '../services/suggestionEngine';
 import { GarmentCard } from '../components/GarmentCard';
 import { StackBottomNav } from '../components/StackBottomNav';
-import { colors } from '../theme/colors';
-import { typography } from '../theme/typography';
+import { SkeletonOutfitCard } from '../components/ui/SkeletonOutfitCard';
+import { colors, radius, shadows, spacing, subtleBrightBorder, typography } from '../theme';
+
+function formatOccasionLabel(value: string): string {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function isInventoryHint(error: string | null): boolean {
+  if (!error) return false;
+  return (
+    error.includes('No hay prendas válidas') ||
+    error.includes('No tienes prendas para ocasión')
+  );
+}
+
+function isGroqFallbackHint(error: string | null): boolean {
+  if (!error) return false;
+  return error.includes('sugerencias guardadas');
+}
+
+function isInfoHint(error: string | null): boolean {
+  return isInventoryHint(error) || isGroqFallbackHint(error);
+}
 
 export function SuggestionsScreen() {
   const navigation = useNavigation();
+  const { width: screenWidth } = useWindowDimensions();
   const { garments, markWorn } = useGarments();
   const { temp, condition } = useWeather();
+  const weatherRef = useRef({ temp, condition });
+  weatherRef.current = { temp, condition };
+  const garmentsRef = useRef(garments);
+  garmentsRef.current = garments;
+  
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasTriedLoad, setHasTriedLoad] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [occasion, setOccasion] = useState('casual');
+  const [activeIndex, setActiveIndex] = useState(0);
   const requestInProgress = useRef(false);
+  const suggestionsRef = useRef<OutfitSuggestion[]>([]);
   const [cooldownUntil, setCooldownUntil] = useState(0);
+  const cooldownUntilRef = useRef(0);
   const DEBOUNCE_MS = 5000;
 
-  const loadSuggestions = async () => {
-    if (requestInProgress.current) return;
-    if (Date.now() < cooldownUntil) return;
-    requestInProgress.current = true;
-    setCooldownUntil(Date.now() + DEBOUNCE_MS);
-    setLoading(true);
-    setApiError(null);
-    try {
-      const weather = temp !== null && condition ? { temp, condition } : undefined;
-      const { suggestions: list, error } = await generateSuggestions(occasion, weather);
-      setSuggestions(list);
-      setApiError(error ?? null);
-      setHasTriedLoad(true);
-    } finally {
-      setLoading(false);
-      requestInProgress.current = false;
-    }
-  };
+  suggestionsRef.current = suggestions;
+
+  const loadSuggestions = useCallback(
+    async (opts?: { refresh?: boolean }) => {
+      if (requestInProgress.current) return;
+
+      if (opts?.refresh) {
+        if (Date.now() < cooldownUntilRef.current) return;
+        const until = Date.now() + DEBOUNCE_MS;
+        cooldownUntilRef.current = until;
+        setCooldownUntil(until);
+        setSuggestions([]);
+        console.log('0. Botón presionado: Ejecutando setSuggestions([]) y mezclando con Fisher-Yates');
+      }
+
+      requestInProgress.current = true;
+      setLoading(true);
+      setApiError(null);
+
+      try {
+        const w = weatherRef.current;
+        const weather =
+          w.temp !== null && w.condition ? { temp: w.temp, condition: w.condition } : undefined;
+
+        const totalInventory = [...garmentsRef.current];
+        if (opts?.refresh) {
+          for (let i = totalInventory.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [totalInventory[i], totalInventory[j]] = [totalInventory[j], totalInventory[i]];
+          }
+        }
+
+        const { suggestions: list, error } = await generateSuggestions(occasion, weather, {
+          variationIndex: opts?.refresh ? Math.floor(Math.random() * 10) : 0,
+          forceRefresh: Boolean(opts?.refresh),
+          garmentsOverride: opts?.refresh ? totalInventory : undefined,
+        });
+
+        setSuggestions(list);
+        setActiveIndex(0);
+        setApiError(error ?? null);
+        setHasTriedLoad(true);
+      } catch {
+        setApiError('Error al conectar con el Stylist');
+      } finally {
+        setLoading(false);
+        requestInProgress.current = false;
+      }
+    },
+    [occasion]
+  );
+
+  useEffect(() => {
+    if (garments.length < 1) return;
+    loadSuggestions();
+  }, [occasion, garments.length, loadSuggestions]);
 
   const isCooldown = Date.now() < cooldownUntil;
 
@@ -56,9 +124,13 @@ export function SuggestionsScreen() {
     const remaining = cooldownUntil - Date.now();
     if (remaining <= 0) {
       setCooldownUntil(0);
+      cooldownUntilRef.current = 0;
       return;
     }
-    const t = setTimeout(() => setCooldownUntil(0), remaining);
+    const t = setTimeout(() => {
+      setCooldownUntil(0);
+      cooldownUntilRef.current = 0;
+    }, remaining);
     return () => clearTimeout(t);
   }, [cooldownUntil]);
 
@@ -68,6 +140,21 @@ export function SuggestionsScreen() {
     }
     navigation.navigate('MainHome', { screen: 'Home' });
   };
+
+  const handleNextOption = () => {
+    if (suggestions.length <= 1) return;
+    setActiveIndex((prev) => (prev + 1) % suggestions.length);
+  };
+
+  const activeSuggestion = suggestions[activeIndex];
+  const cardsPerRow = 3;
+  const horizontalPadding = spacing.md * 2;
+  const cardHorizontalPadding = spacing.lg * 2;
+  const cardsGap = spacing.xs * (cardsPerRow - 1);
+  const optionCardWidth = Math.max(
+    86,
+    Math.floor((screenWidth - horizontalPadding - cardHorizontalPadding - cardsGap) / cardsPerRow)
+  );
 
   if (garments.length < 1) {
     return (
@@ -94,16 +181,6 @@ export function SuggestionsScreen() {
 
   return (
     <View style={styles.wrapper}>
-      <Modal visible={loading} transparent animationType="fade">
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingTitle}>Tu stylist está trabajando</Text>
-            <Text style={styles.loadingText}>Espera un momento...</Text>
-          </View>
-        </View>
-      </Modal>
-
       <View style={styles.container}>
         <View style={styles.filterRow}>
           <Text style={styles.filterLabel}>Ocasión:</Text>
@@ -121,46 +198,48 @@ export function SuggestionsScreen() {
                     occasion === o && styles.chipTextActive,
                   ]}
                 >
-                  {o}
+                  {formatOccasionLabel(o)}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
 
-        {suggestions.length === 0 ? (
+        {loading && suggestions.length === 0 ? (
+          <View style={styles.loadingState}>
+            <Text style={styles.loadingTitle}>Tu Stylist está preparando opciones para ti...</Text>
+            <SkeletonOutfitCard />
+          </View>
+        ) : suggestions.length === 0 ? (
           <View style={styles.centered}>
             {!hasTriedLoad ? (
-              <>
-                <Text style={styles.emptyTitle}>Genera tu outfit con IA</Text>
-                <Text style={styles.emptySubtitle}>
-                  Toca el botón para que el stylist te recomiende una combinación
-                </Text>
-                <TouchableOpacity
-                  style={[styles.primaryButton, (loading || isCooldown) && styles.primaryButtonDisabled]}
-                  onPress={loadSuggestions}
-                  disabled={loading || isCooldown}
-                >
-                  <Text style={styles.primaryButtonText}>
-                    {isCooldown ? 'Espera 5 seg...' : 'Generar sugerencia'}
-                  </Text>
-                </TouchableOpacity>
-              </>
+              <Text style={styles.emptySubtitle}>Cargando ideas de estilo…</Text>
             ) : (
               <>
                 <Text style={styles.emptyTitle}>
-                  {apiError ? 'No se pudo generar' : 'Sin sugerencias'}
+                  {apiError
+                    ? isInfoHint(apiError)
+                      ? 'Sin combinaciones para esta ocasión'
+                      : 'No se pudo generar'
+                    : 'Sin sugerencias'}
                 </Text>
                 {apiError ? (
-                  <Text style={styles.errorText}>{apiError}</Text>
+                  <Text
+                    style={isInfoHint(apiError) ? styles.infoText : styles.errorText}
+                  >
+                    {apiError}
+                  </Text>
                 ) : (
                   <Text style={styles.emptySubtitle}>
                     Añade más prendas e intenta de nuevo
                   </Text>
                 )}
                 <TouchableOpacity
-                  style={[styles.primaryButton, (loading || isCooldown) && styles.primaryButtonDisabled]}
-                  onPress={loadSuggestions}
+                  style={[
+                    styles.primaryButton,
+                    (loading || isCooldown) && styles.primaryButtonDisabled,
+                  ]}
+                  onPress={() => loadSuggestions({ refresh: true })}
                   disabled={loading || isCooldown}
                 >
                   <Text style={styles.primaryButtonText}>
@@ -171,48 +250,75 @@ export function SuggestionsScreen() {
             )}
           </View>
         ) : (
-          <View style={styles.result}>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
             {apiError ? (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorBannerText}>{apiError}</Text>
+              <View
+                style={isInfoHint(apiError) ? styles.infoBanner : styles.errorBanner}
+              >
+                <Text
+                  style={
+                    isInfoHint(apiError) ? styles.infoBannerText : styles.errorBannerText
+                  }
+                >
+                  {apiError}
+                </Text>
               </View>
             ) : null}
-            {suggestions.map((item, i) => (
-              <View key={i} style={styles.card}>
+            {activeSuggestion ? (
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.optionLabel}>
+                    Opción {activeIndex + 1} de {suggestions.length}
+                  </Text>
+                  <View style={styles.cardAccent} />
+                </View>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.outfitRow}
                 >
-                  {item.garments.map((g) => (
+                  {activeSuggestion.garments.map((g) => (
                     <GarmentCard
                       key={g.id}
                       garment={g}
-                      size="small"
+                      width={optionCardWidth}
                       hideLabel
                       imageResizeMode="contain"
                     />
                   ))}
                 </ScrollView>
-                <Text style={styles.reasonText}>{item.reason}</Text>
-                <TouchableOpacity
-                  style={styles.wornButton}
-                  onPress={() => handleWorn(item)}
-                >
-                  <Text style={styles.wornButtonText}>Me lo pongo</Text>
-                </TouchableOpacity>
+                <Text style={styles.reasonText}>{activeSuggestion.reason}</Text>
               </View>
-            ))}
+            ) : null}
+
+            {suggestions.length > 1 ? (
+              <TouchableOpacity
+                style={styles.nextOptionButton}
+                onPress={handleNextOption}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.nextOptionButtonText}>Ver otra opción</Text>
+              </TouchableOpacity>
+            ) : null}
+
             <TouchableOpacity
-              style={[styles.secondaryButton, (loading || isCooldown) && styles.primaryButtonDisabled]}
-              onPress={loadSuggestions}
+              style={[
+                styles.secondaryButton,
+                (loading || isCooldown) && styles.primaryButtonDisabled,
+              ]}
+              onPress={() => loadSuggestions({ refresh: true })}
               disabled={loading || isCooldown}
             >
               <Text style={styles.secondaryButtonText}>
-                {isCooldown ? 'Espera 5 seg...' : 'Otra sugerencia'}
+                {isCooldown ? 'Espera 5 seg...' : '✨ Tres opciones nuevas'}
               </Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         )}
       </View>
       <StackBottomNav />
@@ -220,186 +326,116 @@ export function SuggestionsScreen() {
   );
 }
 
+// ... (los estilos se mantienen igual que tu código original)
 const styles = StyleSheet.create({
-  wrapper: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
-  loadingOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingBox: {
-    backgroundColor: colors.surface,
-    padding: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    gap: 16,
-  },
-  loadingTitle: {
-    fontSize: 22,
-    fontFamily: typography.fontFamily.light,
-    letterSpacing: 0.5,
-    color: colors.text,
-  },
-  loadingText: {
+  wrapper: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.surface },
+  scroll: { flex: 1 },
+  scrollContent: { padding: spacing.md, paddingBottom: spacing.xxl },
+  loadingState: { paddingHorizontal: spacing.md, gap: spacing.md },
+  loadingTitle: { fontSize: 16, fontFamily: typography.fontFamily.regular, letterSpacing: 0.2, color: colors.textPrimary, textAlign: 'center', marginTop: spacing.sm },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl },
+  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl },
+  emptyEmoji: { fontSize: 80, marginBottom: spacing.xl },
+  emptyTitle: { fontSize: 22, fontFamily: typography.fontFamily.light, letterSpacing: 0.5, color: colors.text, textAlign: 'center', marginBottom: spacing.sm },
+  emptySubtitle: { fontSize: 15, fontFamily: typography.fontFamily.light, color: colors.onSurfaceVariant, marginBottom: spacing.xl, textAlign: 'center' },
+  errorText: { fontSize: 14, fontFamily: typography.fontFamily.regular, color: colors.error, marginTop: 12, textAlign: 'center', paddingHorizontal: 16 },
+  infoText: {
     fontSize: 15,
     fontFamily: typography.fontFamily.light,
-    color: colors.onSurfaceVariant,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  empty: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyEmoji: {
-    fontSize: 80,
-    marginBottom: 24,
-  },
-  emptyTitle: {
-    fontSize: 22,
-    fontFamily: typography.fontFamily.light,
-    letterSpacing: 0.5,
-    color: colors.text,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
     textAlign: 'center',
-    marginBottom: 12,
+    paddingHorizontal: spacing.md,
+    lineHeight: 22,
   },
-  emptySubtitle: {
-    fontSize: 15,
-    fontFamily: typography.fontFamily.light,
-    color: colors.onSurfaceVariant,
-    marginBottom: 24,
-    textAlign: 'center',
+  errorBanner: { backgroundColor: colors.error + '20', padding: spacing.sm, marginBottom: spacing.sm, borderRadius: radius.sm },
+  errorBannerText: { fontSize: 14, fontFamily: typography.fontFamily.regular, color: colors.error, textAlign: 'center' },
+  infoBanner: {
+    backgroundColor: colors.primaryMuted,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primaryVariant + '55',
   },
-  errorText: {
+  infoBannerText: {
     fontSize: 14,
     fontFamily: typography.fontFamily.regular,
-    color: colors.error,
-    marginTop: 12,
+    color: colors.textPrimary,
     textAlign: 'center',
-    paddingHorizontal: 16,
+    lineHeight: 21,
   },
-  errorBanner: {
-    backgroundColor: colors.error + '20',
-    padding: 12,
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 8,
-  },
-  errorBannerText: {
-    fontSize: 14,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.error,
-    textAlign: 'center',
-  },
-  primaryButton: {
-    marginTop: 24,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-  },
-  primaryButtonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButtonText: {
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.onPrimary,
-    fontSize: 16,
-  },
+  primaryButton: { marginTop: spacing.xl, paddingHorizontal: spacing.xl, paddingVertical: 14, backgroundColor: colors.primary, borderRadius: radius.md },
+  primaryButtonDisabled: { opacity: 0.6 },
+  primaryButtonText: { fontFamily: typography.fontFamily.semiBold, color: colors.onPrimary, fontSize: 16 },
   secondaryButton: {
-    marginTop: 16,
-    marginHorizontal: 16,
-    paddingVertical: 12,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xxs,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.xl,
     alignItems: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: colors.primaryVariant,
+    ...shadows.elevated,
   },
   secondaryButtonText: {
     fontSize: 15,
-    fontFamily: typography.fontFamily.light,
-    color: colors.accent,
-    textDecorationLine: 'underline',
-  },
-  filterRow: {
-    padding: 16,
-  },
-  filterLabel: {
-    fontSize: 16,
     fontFamily: typography.fontFamily.semiBold,
-    color: colors.onSurface,
-    marginBottom: 8,
+    color: colors.textPrimary,
+    letterSpacing: 0.3,
   },
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  filterRow: { padding: spacing.md },
+  filterLabel: { fontSize: 16, fontFamily: typography.fontFamily.semiBold, color: colors.onSurface, marginBottom: spacing.xs },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, justifyContent: 'center', alignSelf: 'center' },
   chip: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: colors.outline + '30',
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
   },
   chipActive: {
     backgroundColor: colors.primary,
+    borderColor: colors.primaryVariant,
+    ...shadows.elevated,
   },
-  chipText: {
-    fontSize: 14,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.onSurface,
-  },
-  chipTextActive: {
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.onPrimary,
-  },
-  result: {
-    flex: 1,
-    padding: 16,
-  },
+  chipText: { fontSize: 14, fontFamily: typography.fontFamily.regular, color: colors.onSurface },
+  chipTextActive: { fontFamily: typography.fontFamily.semiBold, color: colors.onPrimary },
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    ...subtleBrightBorder,
   },
-  outfitRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-    paddingRight: 16,
-  },
-  reasonText: {
-    fontSize: 14,
-    fontFamily: typography.fontFamily.italic,
-    color: colors.onSurfaceVariant,
-    marginBottom: 12,
-  },
-  wornButton: {
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm, gap: spacing.sm },
+  optionLabel: { fontSize: 13, fontFamily: typography.fontFamily.semiBold, letterSpacing: 1.2, textTransform: 'uppercase', color: colors.onSurfaceVariant },
+  cardAccent: { flex: 1, height: 1, backgroundColor: colors.accent + '55' },
+  outfitRow: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.sm, minWidth: '100%', justifyContent: 'space-between' },
+  reasonText: { fontSize: 15, fontFamily: typography.fontFamily.italic, color: colors.onSurfaceVariant, marginBottom: spacing.xs, lineHeight: 22 },
+  nextOptionButton: {
+    marginTop: spacing.xs,
+    marginBottom: spacing.xxs,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.xl,
     backgroundColor: colors.primary,
-    paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.primaryVariant,
+    ...shadows.elevated,
   },
-  wornButtonText: {
+  nextOptionButtonText: {
     fontFamily: typography.fontFamily.semiBold,
+    fontSize: 16,
     color: colors.onPrimary,
-    fontSize: 14,
+    letterSpacing: 0.3,
   },
+  wornButton: { backgroundColor: colors.primary, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  wornButtonText: { fontFamily: typography.fontFamily.semiBold, color: colors.onPrimary, fontSize: 14 },
 });

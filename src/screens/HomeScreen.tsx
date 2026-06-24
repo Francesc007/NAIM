@@ -19,8 +19,8 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useGarments } from '../context/GarmentContext';
 import { useUser } from '../context/UserContext';
 import { GarmentCard } from '../components/GarmentCard';
-import { colors } from '../theme/colors';
-import { typography } from '../theme/typography';
+import { Skeleton } from '../components/ui/Skeleton';
+import { colors, radius, shadows, spacing, subtleBrightBorder, typography } from '../theme';
 import { MOCK_GARMENTS } from '../constants/mockData';
 import type { TabParamList } from '../navigation/types';
 
@@ -193,7 +193,7 @@ export function HomeScreen() {
           activeOpacity={0.9}
         >
           <LinearGradient
-            colors={['#FFFFFF', '#FBF4EF', '#F5E6DC']}
+            colors={[colors.surfaceElevated, '#FBF4EF', colors.primaryMuted]}
             style={styles.suggestionGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -203,14 +203,96 @@ export function HomeScreen() {
                 Descubre tu outfit ideal para hoy
               </Text>
               <Text style={styles.suggestionSubtitle}>
-                {garments.length === 0
-                  ? 'Añade prendas para recibir sugerencias'
-                  : `Tienes ${garments.length} prendas en tu guardarropa`}
+                {garments.length === 0 ? (
+                  'Añade prendas para recibir sugerencias'
+                ) : (
+                  <Text style={styles.suggestionWardrobeCount}>
+                    {`Tienes ${garments.length} prendas en tu guardarropa`}
+                  </Text>
+                )}
               </Text>
             </View>
             <Text style={styles.arrow}>›</Text>
           </LinearGradient>
         </TouchableOpacity>
+
+        {/* Favoritos - solo 10 prendas más usadas */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Favoritos</Text>
+
+          {loading ? (
+            <View style={styles.masonry}>
+              <View style={styles.column}>
+                <View style={[styles.skeletonCard, { width: cardWidth }]}>
+                  <Skeleton height={160} borderRadius={radius.lg} />
+                  <Skeleton style={styles.skeletonLabel} height={12} />
+                </View>
+                <View style={[styles.skeletonCard, { width: cardWidth }]}>
+                  <Skeleton height={180} borderRadius={radius.lg} />
+                  <Skeleton style={styles.skeletonLabel} height={12} />
+                </View>
+              </View>
+              <View style={styles.column}>
+                <View style={[styles.skeletonCard, { width: cardWidth }]}>
+                  <Skeleton height={180} borderRadius={radius.lg} />
+                  <Skeleton style={styles.skeletonLabel} height={12} />
+                </View>
+                <View style={[styles.skeletonCard, { width: cardWidth }]}>
+                  <Skeleton height={160} borderRadius={radius.lg} />
+                  <Skeleton style={styles.skeletonLabel} height={12} />
+                </View>
+              </View>
+            </View>
+          ) : favorites.length === 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyElegantText}>
+                Tu clóset está esperando...
+              </Text>
+              <Text style={styles.emptySubtitle}>
+                Añade prendas para ver tus favoritos
+              </Text>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={() => navigation.navigate('Add')}
+              >
+                <Text style={styles.primaryButtonText}>Añadir prenda</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.masonry}>
+              <View style={styles.column}>
+                {leftColumn.map((g, i) => (
+                  <GarmentCard
+                    key={g.id}
+                    garment={g}
+                    size="medium"
+                    width={cardWidth}
+                    heightMultiplier={MASONRY_HEIGHTS[i % MASONRY_HEIGHTS.length]}
+                    showSubtleBorder
+                    onPress={() =>
+                      navigation.navigate('Wardrobe', { highlightGarmentId: g.id })
+                    }
+                  />
+                ))}
+              </View>
+              <View style={styles.column}>
+                {rightColumn.map((g, i) => (
+                  <GarmentCard
+                    key={g.id}
+                    garment={g}
+                    size="medium"
+                    width={cardWidth}
+                    heightMultiplier={MASONRY_HEIGHTS[(i + 1) % MASONRY_HEIGHTS.length]}
+                    showSubtleBorder
+                    onPress={() =>
+                      navigation.navigate('Wardrobe', { highlightGarmentId: g.id })
+                    }
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
 
         {/* Inspiración */}
         <View style={styles.mockSection}>
@@ -238,59 +320,6 @@ export function HomeScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-
-        {/* Favoritos - solo 10 prendas más usadas */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Favoritos</Text>
-
-          {favorites.length === 0 ? (
-            <View style={styles.empty}>
-              <Text style={styles.emptyElegantText}>
-                Tu clóset está esperando...
-              </Text>
-              <Text style={styles.emptySubtitle}>
-                Añade prendas para ver tus favoritos
-              </Text>
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={() => navigation.navigate('Add')}
-              >
-                <Text style={styles.primaryButtonText}>Añadir prenda</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.masonry}>
-              <View style={styles.column}>
-                {leftColumn.map((g, i) => (
-                  <GarmentCard
-                    key={g.id}
-                    garment={g}
-                    size="medium"
-                    width={cardWidth}
-                    heightMultiplier={MASONRY_HEIGHTS[i % MASONRY_HEIGHTS.length]}
-                    onPress={() =>
-                      navigation.navigate('Wardrobe', { highlightGarmentId: g.id })
-                    }
-                  />
-                ))}
-              </View>
-              <View style={styles.column}>
-                {rightColumn.map((g, i) => (
-                  <GarmentCard
-                    key={g.id}
-                    garment={g}
-                    size="medium"
-                    width={cardWidth}
-                    heightMultiplier={MASONRY_HEIGHTS[(i + 1) % MASONRY_HEIGHTS.length]}
-                    onPress={() =>
-                      navigation.navigate('Wardrobe', { highlightGarmentId: g.id })
-                    }
-                  />
-                ))}
-              </View>
-            </View>
-          )}
         </View>
       </ScrollView>
 
@@ -348,11 +377,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    paddingBottom: 24,
+    paddingBottom: spacing.xl,
   },
   heroContainer: {
     height: 240,
-    marginBottom: 24,
+    marginBottom: spacing.xl,
     overflow: 'hidden',
   },
   heroImageWrapper: {
@@ -368,7 +397,7 @@ const styles = StyleSheet.create({
   heroContent: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
-    padding: 24,
+    padding: spacing.xl,
     paddingBottom: 28,
   },
   heroTextWrapper: {
@@ -406,20 +435,16 @@ const styles = StyleSheet.create({
     textShadowRadius: 6,
   },
   suggestionCard: {
-    marginHorizontal: 20,
+    marginHorizontal: spacing.lg,
     marginBottom: 28,
-    borderRadius: 20,
+    borderRadius: radius.xl,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    ...subtleBrightBorder,
   },
   suggestionGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
+    padding: spacing.lg,
   },
   suggestionContent: {
     flex: 1,
@@ -436,6 +461,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontFamily: typography.fontFamily.light,
   },
+  suggestionWardrobeCount: {
+    fontSize: 14,
+    color: colors.primaryVariant,
+    fontFamily: typography.fontFamily.semiBold,
+  },
   arrow: {
     fontSize: 28,
     color: colors.accent,
@@ -445,22 +475,18 @@ const styles = StyleSheet.create({
   mockSection: {
     marginTop: 32,
     marginBottom: 28,
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
   },
   mockScroll: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
     flexDirection: 'row',
-    paddingRight: 32,
+    paddingRight: spacing.xxl,
   },
   mockCard: {
-    borderRadius: 20,
+    borderRadius: radius.xl,
     overflow: 'hidden',
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 2,
+    backgroundColor: colors.surfaceElevated,
+    ...subtleBrightBorder,
   },
   mockImage: {
     width: '100%',
@@ -473,18 +499,18 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.semiBold,
     letterSpacing: 0.2,
     textAlign: 'center',
-    backgroundColor: colors.accent + '25',
+    backgroundColor: colors.primaryMuted,
   },
   masonry: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.sm,
     alignItems: 'flex-start',
   },
   column: {
     flex: 1,
   },
   section: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
   },
   sectionTitle: {
     fontSize: 18,
@@ -493,6 +519,19 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 20,
     marginHorizontal: 0,
+  },
+  skeletonCard: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xs,
+    marginBottom: spacing.sm,
+    ...shadows.card,
+  },
+  skeletonLabel: {
+    marginTop: spacing.xs,
+    marginBottom: spacing.xxs,
   },
   empty: {
     alignItems: 'center',

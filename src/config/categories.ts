@@ -13,6 +13,18 @@ export const GARMENT_TYPES = [
   'accesorio',
 ] as const;
 
+/** Orden de visualización en Mi Colección */
+export const WARDROBE_CATEGORY_ORDER = [
+  'calzado',
+  'pantalón',
+  'chamarra',
+  'camiseta',
+  'suéter',
+  'falda',
+  'vestido',
+  'accesorio',
+] as const;
+
 export const OCCASIONS = [
   'casual',
   'formal',
