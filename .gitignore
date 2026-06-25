@@ -1,26 +1,28 @@
-<<<<<<< HEAD
 # --- SEGURIDAD Y LLAVES (CRÍTICO) ---
 .env
 .env.local
 .env.*.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
 *.pem
 *.key
+
+# Logs EAS (pueden contener secretos de build)
+eas-log-fresh.json
+eas-log*.json
 
 # --- DEPENDENCIAS ---
 node_modules/
 
 # --- EXPO Y BUILDS ---
-=======
-# Dependencies
-node_modules/
-
-# Expo
->>>>>>> 92dedfcea4f0269178ed04bc792f21e0ecd499d1
 .expo/
 dist/
 web-build/
 expo-env.d.ts
-<<<<<<< HEAD
 *.tsbuildinfo
 
 # --- NATIVO (ANDROID & IOS) ---
@@ -38,59 +40,18 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
 
 # --- SISTEMA OPERATIVO ---
 .DS_Store
 Thumbs.db
-=======
 
-# Build outputs
-dist/
-build/
-*.tsbuildinfo
-
-# Environment variables
-.env
-.env.*
-.env.local
-.env.development
-.env.development.local
-.env.test
-.env.test.local
-.env.production
-.env.production.local
-
-# Native
-ios/
-android/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# Debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
-*.pem
-
-# IDE
+# --- IDE ---
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Testing
+# --- TESTING ---
 coverage/
 .nyc_output/
->>>>>>> 92dedfcea4f0269178ed04bc792f21e0ecd499d1
