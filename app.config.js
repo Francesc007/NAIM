@@ -29,6 +29,7 @@ module.exports = {
     name: 'NAIM',
     slug: 'guardarropa-app',
     owner: 'frank_714mos',
+    scheme: 'naim',
     version: '1.0.0',
     updates: {
       url: 'https://u.expo.dev/d5a29fa1-0095-4b17-84c0-68955e31b70e',
@@ -61,6 +62,20 @@ module.exports = {
         monochromeImage: './assets/android-icon-monochrome.png',
       },
       predictiveBackGestureEnabled: false,
+      intentFilters: [
+        {
+          action: 'VIEW',
+          autoVerify: true,
+          data: [
+            {
+              scheme: 'naim',
+              host: 'auth',
+              pathPrefix: '/callback',
+            },
+          ],
+          category: ['BROWSABLE', 'DEFAULT'],
+        },
+      ],
     },
     web: {
       favicon: './assets/favicon.png',

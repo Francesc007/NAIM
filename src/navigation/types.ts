@@ -1,8 +1,11 @@
 export type RootStackParamList = {
-  MainHome: undefined;
+  Login: undefined;
+  Onboarding: undefined;
+  Main: undefined;
   AddGarment: undefined;
   Suggestions: undefined;
   Settings: undefined;
+  PrivacyNotice: undefined;
 };
 
 export type TabParamList = {

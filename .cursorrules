@@ -3,3 +3,4 @@
 - **Validación Obligatoria:** ANTES de modificar cualquier archivo, debes leer el código completo existente para entender su contexto. Queda prohibido borrar funciones operativas o variables de entorno existentes.
 - **Estrategia Antirotura:** Cada vez que propongas un cambio de lógica o UI, debes incluir un plan de prueba (test manual o unitario rápido) paso a paso para asegurar que el clima, Supabase y Groq sigan comunicándose correctamente.
 - **Control de Daños:** Si detectas un error de compilación o de tipos, detén la generación y pide confirmación al usuario explicando el riesgo técnico.
+- **Botones UI:** Usar siempre `naimButtons` de `src/theme/buttons.ts` — rectangulares con esquinas `radius.md` (12px). Evitar `radius.pill` en botones de acción, modales y formularios.

@@ -2,13 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Alert,
   Animated,
+  Easing,
   Image,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -32,16 +31,21 @@ const MASONRY_HEIGHTS = [1, 1.35, 1.1, 1.45, 1.2, 1.3, 1.05, 1.4, 1.15, 1.25];
 /** Imágenes del Hero - crossfade infinito cada 6 segundos */
 const HERO_IMAGES = [
   require('../../assets/hero/jeans.jpg'),
-  require('../../assets/hero/ropa.jpg'),
-  require('../../assets/hero/t-shirt.jpg'),
+  require('../../assets/hero/guardarropa3.jpg'),
+  require('../../assets/hero/ropa1.jpg'),
+  require('../../assets/hero/guardarropa.jpg'),
+  require('../../assets/hero/guardarropa2.jpg'),
 ];
+
+const HERO_SCALE_FROM = 1;
+const HERO_SCALE_TO = 1.08;
+const HERO_SLIDE_MS = 6000;
+const HERO_CROSSFADE_MS = 1800;
 
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const { garments, loading, refresh } = useGarments();
-  const { userName, setUserName, isLoading: userLoading } = useUser();
-  const [showNameModal, setShowNameModal] = useState(false);
-  const [nameInput, setNameInput] = useState('');
+  const { userName } = useUser();
   const { width } = useWindowDimensions();
   const padding = 20;
   const gap = 12;
@@ -56,30 +60,6 @@ export function HomeScreen() {
   const leftColumn = favorites.filter((_, i) => i % 2 === 0);
   const rightColumn = favorites.filter((_, i) => i % 2 === 1);
 
-  // Mostrar modal solo si no hay nombre Y no hay prendas (usuario nuevo)
-  // Si ya tiene prendas (de Supabase), es usuario existente: no pedir nombre de nuevo
-  React.useEffect(() => {
-    if (userLoading) return;
-    if (userName) {
-      setShowNameModal(false);
-      return;
-    }
-    if (garments.length > 0) {
-      setShowNameModal(false);
-      return;
-    }
-    setShowNameModal(true);
-  }, [userLoading, userName, garments.length]);
-
-  const handleSaveName = async () => {
-    const trimmed = nameInput.trim();
-    if (trimmed) {
-      await setUserName(trimmed);
-      setShowNameModal(false);
-      setNameInput('');
-    }
-  };
-
   const handleMockPress = () => {
     Alert.alert(
       'Próximamente',
@@ -88,50 +68,67 @@ export function HomeScreen() {
     );
   };
 
-  const displayName = userName || '';
+  const customName = userName?.trim() ?? '';
+  const hasCustomName = customName.length > 0;
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  const activeIndexRef = useRef(0);
   const opacityAnims = useRef(
     HERO_IMAGES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))
   ).current;
-  const scaleAnims = useRef(HERO_IMAGES.map(() => new Animated.Value(1))).current;
+  const scaleAnims = useRef(HERO_IMAGES.map(() => new Animated.Value(HERO_SCALE_FROM))).current;
 
-  const runZoomAfterDelay = (index: number) => {
-    scaleAnims[index].setValue(1.0);
+  const runHeroZoom = (index: number) => {
+    scaleAnims[index].setValue(HERO_SCALE_FROM);
     Animated.timing(scaleAnims[index], {
-      toValue: 1.1,
-      duration: 6000,
+      toValue: HERO_SCALE_TO,
+      duration: HERO_SLIDE_MS,
+      easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
   };
 
+  const crossfadeToIndex = (next: number) => {
+    const prev = activeIndexRef.current;
+    if (prev === next) return;
+
+    scaleAnims[next].setValue(HERO_SCALE_FROM);
+    opacityAnims[next].setValue(0);
+
+    Animated.parallel([
+      Animated.timing(opacityAnims[prev], {
+        toValue: 0,
+        duration: HERO_CROSSFADE_MS,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnims[next], {
+        toValue: 1,
+        duration: HERO_CROSSFADE_MS,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (!finished) return;
+      scaleAnims[prev].stopAnimation();
+      scaleAnims[prev].setValue(HERO_SCALE_FROM);
+    });
+
+    runHeroZoom(next);
+    activeIndexRef.current = next;
+  };
+
   useEffect(() => {
-    runZoomAfterDelay(0);
+    runHeroZoom(0);
   }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setActiveIndex((prev) => {
-        const next = (prev + 1) % HERO_IMAGES.length;
-        Animated.parallel([
-          Animated.timing(opacityAnims[prev], {
-            toValue: 0,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(opacityAnims[next], {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ]).start();
-        scaleAnims[prev].setValue(1);
-        runZoomAfterDelay(next);
-        return next;
-      });
-    }, 6000);
+      const next = (activeIndexRef.current + 1) % HERO_IMAGES.length;
+      crossfadeToIndex(next);
+    }, HERO_SLIDE_MS);
+
     return () => clearInterval(interval);
-  }, [activeIndex]);
+  }, []);
 
   return (
     <View style={styles.wrapper}>
@@ -150,7 +147,7 @@ export function HomeScreen() {
                 key={index}
                 source={img}
                 style={[
-                  StyleSheet.absoluteFill,
+                  styles.heroImageLayer,
                   {
                     opacity: opacityAnims[index],
                     transform: [{ scale: scaleAnims[index] }],
@@ -166,21 +163,16 @@ export function HomeScreen() {
               locations={[0.3, 1]}
             />
           </View>
-          <TouchableOpacity
-            style={styles.heroContent}
-            onLongPress={() => {
-              setShowNameModal(true);
-              setNameInput(displayName);
-            }}
-            activeOpacity={1}
-          >
+          <TouchableOpacity style={styles.heroContent} activeOpacity={1}>
             <View style={styles.heroTextWrapper}>
               <Text style={styles.heroTitle}>
-                Hola{displayName ? ' ' : ''}
-                {displayName ? (
-                  <Text style={styles.heroUserName}>{displayName}</Text>
-                ) : null}
-                {displayName ? ',' : ''}
+                {hasCustomName ? (
+                  <>
+                    Hola <Text style={styles.heroUserName}>{customName}</Text>,
+                  </>
+                ) : (
+                  'Hola'
+                )}
               </Text>
             </View>
           </TouchableOpacity>
@@ -323,46 +315,6 @@ export function HomeScreen() {
         </View>
       </ScrollView>
 
-      {/* Modal de bienvenida - ¿Cómo te llamas? */}
-      <Modal
-        visible={showNameModal}
-        transparent
-        animationType="fade"
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>¿Cómo te llamas?</Text>
-            <Text style={styles.modalSubtitle}>
-              Personaliza tu experiencia
-            </Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Tu nombre"
-              placeholderTextColor={colors.onSurfaceVariant}
-              value={nameInput}
-              onChangeText={setNameInput}
-              autoCapitalize="words"
-              autoCorrect={false}
-            />
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={handleSaveName}
-              disabled={!nameInput.trim()}
-            >
-              <Text style={styles.modalButtonText}>Guardar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalSkipButton}
-              onPress={() => {
-                setShowNameModal(false);
-                setNameInput('');
-              }}
-            >
-              <Text style={styles.modalSkipText}>Más tarde</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -386,6 +338,13 @@ const styles = StyleSheet.create({
   },
   heroImageWrapper: {
     ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
+    backgroundColor: colors.background,
+  },
+  heroImageLayer: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
   },
   heroOverlay: {
     backgroundColor: 'rgba(0,0,0,0.15)',
@@ -563,63 +522,5 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: typography.fontFamily.regular,
     fontSize: 15,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 28,
-    width: '100%',
-    maxWidth: 400,
-  },
-  modalTitle: {
-    fontSize: 22,
-    color: colors.text,
-    fontFamily: typography.fontFamily.semiBold,
-    letterSpacing: 0.5,
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.fontFamily.light,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  modalInput: {
-    marginTop: 24,
-    padding: 16,
-    backgroundColor: colors.background,
-    borderRadius: 16,
-    fontSize: 16,
-    color: colors.text,
-    fontFamily: typography.fontFamily.regular,
-  },
-  modalButton: {
-    marginTop: 24,
-    paddingVertical: 16,
-    backgroundColor: colors.accent,
-    borderRadius: 28,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    color: colors.text,
-    fontFamily: typography.fontFamily.semiBold,
-    fontSize: 16,
-  },
-  modalSkipButton: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  modalSkipText: {
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.fontFamily.light,
-    fontSize: 14,
   },
 });

@@ -14,22 +14,22 @@ export function StackBottomNav() {
   const androidLift = Platform.OS === 'android' ? spacing.xs : 0;
 
   const activeTab = useNavigationState((state) => {
-    const mainRoute = state.routes.find((r) => r.name === 'MainHome');
+    const mainRoute = state.routes.find((r) => r.name === 'Main');
     const tabState = mainRoute?.state as { index: number; routes: { name: string }[] } | undefined;
     if (!tabState?.routes?.length) return null;
     return tabState.routes[tabState.index]?.name ?? null;
   });
 
   const goToHome = () => {
-    navigation.navigate('MainHome', { screen: 'Home' });
+    navigation.navigate('Main', { screen: 'Home' });
   };
 
   const goToAdd = () => {
-    navigation.navigate('MainHome', { screen: 'Add' });
+    navigation.navigate('Main', { screen: 'Add' });
   };
 
   const goToWardrobe = () => {
-    navigation.navigate('MainHome', { screen: 'Wardrobe' });
+    navigation.navigate('Main', { screen: 'Wardrobe' });
   };
 
   return (

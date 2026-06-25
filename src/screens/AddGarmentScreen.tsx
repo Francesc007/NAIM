@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { useNavigation } from '@react-navigation/native';
 import { saveImageForGarment } from '../utils/platformStorage';
 import { useGarments } from '../context/GarmentContext';
 import { Garment } from '../types/garment';
@@ -21,11 +22,13 @@ import { colors, radius, shadows, spacing, subtleBrightBorder, typography } from
 import { ExpandableSelector } from '../components/ExpandableSelector';
 import { ClassificationTags } from '../components/ClassificationTags';
 import { PrivacyConsentModal } from '../components/PrivacyConsentModal';
+import { SyncAccountHint } from '../components/SyncAccountHint';
 import { StackBottomNav } from '../components/StackBottomNav';
 import { Skeleton } from '../components/ui/Skeleton';
 import { LoadingOverlay } from '../components/ui/LoadingOverlay';
 import { classifyImage } from '../services/aiClassificationService';
 import { usePrivacyConsent } from '../hooks/usePrivacyConsent';
+import { useAccountProtection } from '../hooks/useAccountProtection';
 import { v4 as uuid } from 'uuid';
 
 interface AddGarmentScreenProps {
@@ -33,8 +36,10 @@ interface AddGarmentScreenProps {
 }
 
 export function AddGarmentScreen({ hideBottomNav = false }: AddGarmentScreenProps) {
+  const navigation = useNavigation();
   const { addGarment } = useGarments();
   const { hasConsent, acceptConsent, loading: consentLoading } = usePrivacyConsent();
+  const { needsSync, loading: protectionLoading } = useAccountProtection();
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -117,6 +122,15 @@ export function AddGarmentScreen({ hideBottomNav = false }: AddGarmentScreenProp
     await launchImagePicker();
   }, [acceptConsent, launchImagePicker]);
 
+  const openSettings = useCallback(() => {
+    const parentNavigation = navigation.getParent();
+    if (parentNavigation) {
+      parentNavigation.navigate('Settings' as never);
+      return;
+    }
+    navigation.navigate('Settings' as never);
+  }, [navigation]);
+
   const save = async () => {
     if (!name.trim()) {
       Alert.alert('Nombre requerido', 'Escribe un nombre para la prenda.', [{ text: 'De acuerdo' }]);
@@ -178,6 +192,10 @@ export function AddGarmentScreen({ hideBottomNav = false }: AddGarmentScreenProp
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.scroll}>
+        {!protectionLoading && needsSync ? (
+          <SyncAccountHint onPressSync={openSettings} />
+        ) : null}
+
         <TouchableOpacity style={styles.imageArea} onPress={pickImage} disabled={classifying}>
           {imageUri ? (
             <Image

@@ -2,6 +2,7 @@ import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import {
   SectionList,
   Image,
+  ImageBackground,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -18,6 +19,8 @@ import { typography } from '../theme/typography';
 import type { TabParamList } from '../navigation/types';
 
 const PREVIEW_LIMIT = 5;
+
+const EMPTY_WARDROBE_IMAGE = require('../../assets/empty/guardarropa-vacio.jpg');
 
 type WardrobeSection = {
   title: string;
@@ -170,16 +173,19 @@ export function WardrobeScreen() {
 
   if (garments.length === 0 && !loading) {
     return (
-      <View style={[styles.empty, { backgroundColor: colors.background }]}>
-        <Text style={styles.emptyEmoji}>👔</Text>
-        <Text style={styles.emptyElegantText}>Tu clóset está esperando...</Text>
-        <Text style={styles.emptySubtitle}>Añade tu primera prenda para empezar</Text>
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() => navigation.navigate('Add')}
-        >
-          <Text style={styles.primaryButtonText}>Añadir prenda</Text>
-        </TouchableOpacity>
+      <View style={styles.emptyRoot}>
+        <ImageBackground source={EMPTY_WARDROBE_IMAGE} style={styles.emptyBackground} resizeMode="cover">
+          <View style={styles.emptyOverlay}>
+            <Text style={styles.emptyElegantText}>Tu clóset está esperando...</Text>
+            <Text style={styles.emptySubtitle}>Añade tu primera prenda para empezar</Text>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => navigation.navigate('Add')}
+            >
+              <Text style={styles.primaryButtonText}>Añadir prenda</Text>
+            </TouchableOpacity>
+          </View>
+        </ImageBackground>
       </View>
     );
   }
@@ -329,29 +335,41 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceVariant,
     marginTop: 4,
   },
-  empty: {
+  emptyRoot: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  emptyBackground: {
+    flex: 1,
+    width: '100%',
+  },
+  emptyOverlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
-  },
-  emptyEmoji: {
-    fontSize: 80,
-    marginBottom: 24,
+    backgroundColor: 'rgba(255, 251, 247, 0.78)',
   },
   emptyElegantText: {
     fontSize: 22,
-    color: colors.text,
-    fontFamily: typography.fontFamily.light,
+    color: '#5C4033',
+    fontFamily: typography.fontFamily.semiBold,
     letterSpacing: 0.5,
     textAlign: 'center',
     marginBottom: 12,
+    textShadowColor: 'rgba(255, 255, 255, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
   emptySubtitle: {
     fontSize: 15,
-    color: colors.onSurfaceVariant,
-    fontFamily: typography.fontFamily.light,
+    color: '#8B5E3C',
+    fontFamily: typography.fontFamily.regular,
     marginBottom: 24,
+    textAlign: 'center',
+    textShadowColor: 'rgba(255, 255, 255, 0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   primaryButton: {
     marginTop: 24,

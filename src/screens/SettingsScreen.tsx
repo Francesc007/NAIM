@@ -4,32 +4,87 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   Image,
   TextInput,
   ScrollView,
+  Modal,
+  Pressable,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useUser } from '../context/UserContext';
-import { colors, radius, shadows, spacing, typography } from '../theme';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
+import { NaimDialog, NaimDialogTone } from '../components/NaimDialog';
+import { useAuthSession } from '../context/AuthSessionContext';
+import { useUser, GUEST_DISPLAY_NAME, getUserInitial } from '../context/UserContext';
+import { colors, naimButtons, radius, shadows, spacing, subtleBrightBorder, typography } from '../theme';
+import type { RootStackParamList } from '../navigation/types';
+import {
+  isAccountDataProtected,
+  signOutAndPurgeUnprotectedAccount,
+  signOutProtectedAccount,
+} from '../services/accountProtectionService';
 import {
   createAnonymousSession,
   deleteCurrentAccount,
   getProfileFromSupabase,
-  signOutCurrentUser,
+  linkAnonymousAccount,
+  removeProfileImage,
   updateProfileName,
   uploadProfileImage,
 } from '../services/profileService';
 
+type DialogState = {
+  visible: boolean;
+  title: string;
+  message?: string;
+  tone?: NaimDialogTone;
+  primaryText?: string;
+  secondaryText?: string;
+  primaryDestructive?: boolean;
+  onPrimary?: () => void;
+  onSecondary?: () => void;
+};
+
+const initialDialog: DialogState = {
+  visible: false,
+  title: '',
+  message: '',
+};
+
 export function SettingsScreen() {
-  const { userName, setUserName } = useUser();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { requestLoginScreen } = useAuthSession();
+  const { userName, setUserName, avatarUrl, avatarDisplayUrl, setAvatarUrl, resetLocalProfile } = useUser();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [draftName, setDraftName] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
+  const [savedNameBaseline, setSavedNameBaseline] = useState('');
+  const [dialog, setDialog] = useState<DialogState>(initialDialog);
+  const [isAnonymous, setIsAnonymous] = useState(true);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [emailConfirmed, setEmailConfirmed] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [linkEmailDraft, setLinkEmailDraft] = useState('');
+
+  const profileImageUri = avatarDisplayUrl ?? avatarUrl;
+  const accountProtected = isAccountDataProtected({
+    email: accountEmail,
+    emailConfirmed,
+    isAnonymous,
+  });
+
+  const showDialog = (config: Omit<DialogState, 'visible'>) => {
+    setDialog({ ...config, visible: true });
+  };
+
+  const closeDialog = () => setDialog(initialDialog);
 
   useEffect(() => {
     let mounted = true;
@@ -37,12 +92,21 @@ export function SettingsScreen() {
       try {
         const profile = await getProfileFromSupabase();
         if (!mounted) return;
-        setAvatarUrl(profile.avatarUrl);
-        setDraftName(userName ?? profile.displayName ?? 'Javier');
+        if (profile.avatarUrl) {
+          await setAvatarUrl(profile.avatarUrl);
+        }
+        const loadedName = (userName ?? profile.displayName ?? '').trim();
+        setDraftName(loadedName);
+        setSavedNameBaseline(loadedName);
+        setIsAnonymous(profile.isAnonymous);
+        setAccountEmail(profile.email);
+        setEmailConfirmed(profile.emailConfirmed);
       } catch (err) {
         console.warn('[NAIM] Perfil ajustes:', err);
         if (mounted) {
-          setDraftName(userName ?? 'Javier');
+          const fallback = (userName ?? '').trim();
+          setDraftName(fallback);
+          setSavedNameBaseline(fallback);
         }
       } finally {
         if (mounted) setLoading(false);
@@ -51,26 +115,45 @@ export function SettingsScreen() {
     return () => {
       mounted = false;
     };
-  }, [userName]);
+    // Solo al montar la pantalla — evita sobrescribir avatar recién subido.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const initials = useMemo(() => {
-    const source = draftName.trim() || userName?.trim() || 'N';
-    return source.slice(0, 1).toUpperCase();
+    const trimmedDraft = draftName.trim();
+    if (trimmedDraft) return trimmedDraft.slice(0, 1).toUpperCase();
+    return getUserInitial(userName);
   }, [draftName, userName]);
 
-  const handleSaveName = async () => {
+  const persistName = async (options?: { silent?: boolean }) => {
     const trimmed = draftName.trim();
     if (!trimmed) {
-      Alert.alert('Nombre requerido', 'Escribe un nombre para continuar.');
+      setDraftName(savedNameBaseline);
+      if (!options?.silent) {
+        showDialog({
+          title: 'Un detalle necesario',
+          message: 'Escríbenos cómo quieres que te saludemos en Inicio.',
+          tone: 'info',
+          primaryText: 'De acuerdo',
+        });
+      }
       return;
     }
+
+    if (trimmed === savedNameBaseline) return;
+
     setBusy(true);
     try {
       await updateProfileName(trimmed);
       await setUserName(trimmed);
-      Alert.alert('Perfil actualizado', 'Tu nombre se guardó correctamente.');
+      setSavedNameBaseline(trimmed);
     } catch (err) {
-      Alert.alert('No se pudo guardar', err instanceof Error ? err.message : 'Intenta de nuevo.');
+      showDialog({
+        title: 'No pudimos guardar',
+        message: err instanceof Error ? err.message : 'Inténtalo de nuevo en un momento.',
+        tone: 'info',
+        primaryText: 'Entendido',
+      });
     } finally {
       setBusy(false);
     }
@@ -79,13 +162,18 @@ export function SettingsScreen() {
   const handlePickPhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permiso requerido', 'Activa el acceso a fotos para cambiar tu perfil.');
+      showDialog({
+        title: 'Acceso a fotos',
+        message: 'Activa el permiso de galería para personalizar tu perfil con elegancia.',
+        tone: 'info',
+        primaryText: 'Entendido',
+      });
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      quality: 0.85,
+      quality: 1,
       aspect: [1, 1],
     });
     if (result.canceled) return;
@@ -96,75 +184,231 @@ export function SettingsScreen() {
     setBusy(true);
     try {
       const url = await uploadProfileImage(picked);
-      setAvatarUrl(url);
-      Alert.alert('Foto actualizada', 'Tu foto de perfil se guardó en la nube.');
+      await setAvatarUrl(url);
+      showDialog({
+        title: 'Foto guardada',
+        message: 'Tu imagen de perfil ya luce en NAIM, con el detalle que mereces.',
+        tone: 'success',
+        primaryText: 'Me encanta',
+      });
     } catch (err) {
-      Alert.alert('No se pudo subir la foto', err instanceof Error ? err.message : 'Intenta de nuevo.');
+      showDialog({
+        title: 'No pudimos subir la foto',
+        message: err instanceof Error ? err.message : 'Revisa tu conexión e inténtalo de nuevo.',
+        tone: 'info',
+        primaryText: 'Entendido',
+      });
     } finally {
       setBusy(false);
     }
   };
 
-  const handleSignOut = () => {
-    Alert.alert(
-      'Cerrar sesión',
-      'Se cerrará tu sesión actual y se iniciará una nueva sesión anónima.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Cerrar sesión',
-          onPress: async () => {
-            setBusy(true);
+  const handleRemovePhoto = () => {
+    if (!avatarUrl) return;
+    showDialog({
+      title: '¿Quitar tu foto?',
+      message:
+        'Volverás a mostrar tu inicial en el guardarropa. Puedes elegir una nueva imagen cuando quieras.',
+      tone: 'warm',
+      secondaryText: 'Cancelar',
+      primaryText: 'Quitar foto',
+      primaryDestructive: true,
+      onPrimary: () => {
+        setBusy(true);
+        void (async () => {
+          try {
+            await removeProfileImage();
+            await setAvatarUrl(null);
+            showDialog({
+              title: 'Foto retirada',
+              message: 'Tu inicial vuelve a ser el protagonista. Siempre elegante, siempre tú.',
+              tone: 'success',
+              primaryText: 'Perfecto',
+            });
+          } catch (err) {
+            showDialog({
+              title: 'No pudimos quitar la foto',
+              message: err instanceof Error ? err.message : 'Inténtalo de nuevo en un momento.',
+              tone: 'info',
+              primaryText: 'Entendido',
+            });
+          } finally {
+            setBusy(false);
+          }
+        })();
+      },
+    });
+  };
+
+  const handleLinkEmail = async () => {
+    const trimmed = linkEmailDraft.trim();
+    if (!trimmed) {
+      showDialog({
+        title: 'Correo necesario',
+        message: 'Escríbenos tu email para sincronizar tu guardarropa.',
+        tone: 'info',
+        primaryText: 'Entendido',
+      });
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await linkAnonymousAccount(trimmed);
+      setAccountEmail(trimmed.toLowerCase());
+      setEmailConfirmed(false);
+      setShowEmailModal(false);
+      setLinkEmailDraft('');
+      showDialog({
+        title: 'Revisa tu bandeja',
+        message:
+          'Te enviamos un enlace de confirmación. Ábrelo en este mismo teléfono para que NAIM vincule tu correo y proteja tu guardarropa.',
+        tone: 'success',
+        primaryText: 'Perfecto',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Inténtalo de nuevo en un momento.';
+      const duplicate = message.toLowerCase().includes('ya está en uso');
+      showDialog({
+        title: duplicate ? 'Correo en uso' : 'No pudimos vincular',
+        message,
+        tone: 'info',
+        primaryText: 'Entendido',
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetProfileUi = () => {
+    setDraftName('');
+    setSavedNameBaseline('');
+    setIsAnonymous(true);
+    setAccountEmail(null);
+    setEmailConfirmed(false);
+  };
+
+  const finishSignOut = async () => {
+    await resetLocalProfile();
+    resetProfileUi();
+    await requestLoginScreen();
+  };
+
+  const showSignOutError = (err: unknown) => {
+    showDialog({
+      title: 'No se pudo cerrar sesión',
+      message: err instanceof Error ? err.message : 'Inténtalo de nuevo en un momento.',
+      tone: 'info',
+      primaryText: 'Entendido',
+    });
+  };
+
+  const confirmUnprotectedSignOut = () => {
+    setTimeout(() => {
+      showDialog({
+        title: '¿Cerrar sin respaldo?',
+        message:
+          'Si sales ahora, tu guardarropa se eliminará por completo. No podrás recuperar prendas, imágenes, perfil ni esta sesión en otro momento.',
+        tone: 'warm',
+        primaryText: 'Salir y borrar',
+        secondaryText: 'Volver',
+        primaryDestructive: true,
+        onPrimary: () => {
+          setBusy(true);
+          void (async () => {
             try {
-              await signOutCurrentUser();
-              await AsyncStorage.clear();
-              await setUserName(null);
-              await createAnonymousSession();
-              setAvatarUrl('');
-              setDraftName('Javier');
-              Alert.alert('Listo', 'Sesión cerrada correctamente.');
+              await signOutAndPurgeUnprotectedAccount();
+              await finishSignOut();
             } catch (err) {
-              Alert.alert('No se pudo cerrar sesión', err instanceof Error ? err.message : 'Intenta de nuevo.');
+              showSignOutError(err);
             } finally {
               setBusy(false);
             }
-          },
+          })();
         },
-      ]
-    );
+      });
+    }, 280);
+  };
+
+  const handleSignOut = () => {
+    if (accountProtected) {
+      showDialog({
+        title: '¿Cerrar sesión?',
+        message:
+          'Tu guardarropa está respaldado. Podrás volver a entrar con tu correo cuando lo desees.',
+        tone: 'warm',
+        secondaryText: 'Cancelar',
+        primaryText: 'Cerrar sesión',
+        onPrimary: () => {
+          setBusy(true);
+          void (async () => {
+            try {
+              await signOutProtectedAccount();
+              await finishSignOut();
+            } catch (err) {
+              showSignOutError(err);
+            } finally {
+              setBusy(false);
+            }
+          })();
+        },
+      });
+      return;
+    }
+
+    showDialog({
+      title: 'Antes de salir',
+      message:
+        'Tu guardarropa aún no está respaldado. Vincula tu correo para conservar prendas, fotos y perfil con elegancia, estés donde estés.',
+      tone: 'warm',
+      primaryText: 'Sincronizar email',
+      secondaryText: 'Cerrar sesión',
+      onPrimary: () => setShowEmailModal(true),
+      onSecondary: confirmUnprotectedSignOut,
+    });
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      'Eliminar cuenta',
-      'Esta acción eliminará tu cuenta actual y sus datos asociados. Esta acción no se puede deshacer.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar cuenta',
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            try {
-              await deleteCurrentAccount();
-              await AsyncStorage.clear();
-              await setUserName(null);
-              await createAnonymousSession();
-              setAvatarUrl('');
-              setDraftName('Javier');
-              Alert.alert('Cuenta eliminada', 'Se creó una nueva sesión anónima.');
-            } catch (err) {
-              Alert.alert(
-                'No se pudo eliminar la cuenta',
-                err instanceof Error ? err.message : 'Verifica la configuración en Supabase.'
-              );
-            } finally {
-              setBusy(false);
-            }
-          },
-        },
-      ]
-    );
+    showDialog({
+      title: '¿Eliminar cuenta?',
+      message:
+        'Esta acción eliminará tu cuenta y tus prendas guardadas. No se puede deshacer.',
+      tone: 'warm',
+      secondaryText: 'Cancelar',
+      primaryText: 'Eliminar',
+      primaryDestructive: true,
+      onPrimary: () => {
+        setBusy(true);
+        void (async () => {
+          try {
+            await deleteCurrentAccount();
+            await AsyncStorage.clear();
+            await resetLocalProfile();
+            await createAnonymousSession();
+            setDraftName('');
+            setSavedNameBaseline('');
+            showDialog({
+              title: 'Cuenta eliminada',
+              message: 'Empezamos de cero, con estilo. Ya tienes una nueva sesión anónima.',
+              tone: 'success',
+              primaryText: 'Entendido',
+            });
+          } catch (err) {
+            showDialog({
+              title: 'No se pudo eliminar la cuenta',
+              message:
+                err instanceof Error
+                  ? err.message
+                  : 'Verifica la configuración en Supabase e inténtalo de nuevo.',
+              tone: 'info',
+              primaryText: 'Entendido',
+            });
+          } finally {
+            setBusy(false);
+          }
+        })();
+      },
+    });
   };
 
   if (loading) {
@@ -185,49 +429,80 @@ export function SettingsScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Ajustes de Perfil</Text>
-        <Text style={styles.subtitle}>Controla tu identidad y tu cuenta de NAIM.</Text>
-
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Perfil</Text>
-          <View style={styles.avatarRow}>
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitial}>{initials}</Text>
-              </View>
-            )}
-            <TouchableOpacity
-              style={[styles.secondaryButton, busy && styles.disabledButton]}
-              onPress={handlePickPhoto}
-              disabled={busy}
-            >
-              <Text style={styles.secondaryButtonText}>Cambiar foto</Text>
-            </TouchableOpacity>
+          <View style={styles.avatarSection}>
+            <View style={styles.avatarWrap}>
+              <TouchableOpacity
+                style={[styles.avatarCircle, busy && styles.disabledButton]}
+                onPress={handlePickPhoto}
+                activeOpacity={0.85}
+                disabled={busy}
+              >
+                {profileImageUri ? (
+                  <Image
+                    key={profileImageUri}
+                    source={{ uri: profileImageUri }}
+                    style={styles.avatarImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.avatarPlaceholderInner}>
+                    <Text style={styles.avatarInitial}>{initials}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              {avatarUrl ? (
+                <TouchableOpacity
+                  style={styles.trashButton}
+                  onPress={handleRemovePhoto}
+                  activeOpacity={0.75}
+                  disabled={busy}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="trash-outline" size={13} color={colors.error} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
 
           <Text style={styles.inputLabel}>Nombre de usuario</Text>
           <TextInput
             value={draftName}
             onChangeText={setDraftName}
+            onBlur={() => void persistName({ silent: true })}
             style={styles.input}
-            placeholder="Javier"
+            placeholder={GUEST_DISPLAY_NAME}
             placeholderTextColor={colors.onSurfaceVariant}
             autoCapitalize="words"
             editable={!busy}
+            returnKeyType="done"
+            onSubmitEditing={() => void persistName({ silent: true })}
           />
-          <TouchableOpacity
-            style={[styles.primaryButton, busy && styles.disabledButton]}
-            onPress={handleSaveName}
-            disabled={busy}
-          >
-            <Text style={styles.primaryButtonText}>Guardar cambios</Text>
-          </TouchableOpacity>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Cuenta</Text>
+          {isAnonymous && !accountEmail ? (
+            <TouchableOpacity
+              style={[styles.protectButton, busy && styles.disabledButton]}
+              onPress={() => setShowEmailModal(true)}
+              disabled={busy}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.protectButtonText}>Sincronizar con email</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {accountEmail && !emailConfirmed ? (
+            <Text style={styles.accountHint}>
+              Confirmación pendiente en {accountEmail}. Revisa tu correo.
+            </Text>
+          ) : null}
+
+          {accountEmail && emailConfirmed ? (
+            <Text style={styles.accountHintProtected}>Sincronizado · {accountEmail}</Text>
+          ) : null}
+
           <TouchableOpacity
             style={[styles.signOutButton, busy && styles.disabledButton]}
             onPress={handleSignOut}
@@ -244,7 +519,79 @@ export function SettingsScreen() {
             <Text style={styles.deleteText}>Eliminar Cuenta</Text>
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          style={styles.privacyLinkWrap}
+          onPress={() => navigation.navigate('PrivacyNotice')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.privacyLink}>Aviso de Privacidad</Text>
+        </TouchableOpacity>
       </ScrollView>
+
+      <NaimDialog
+        visible={dialog.visible}
+        title={dialog.title}
+        message={dialog.message}
+        tone={dialog.tone}
+        primaryText={dialog.primaryText}
+        secondaryText={dialog.secondaryText}
+        primaryDestructive={dialog.primaryDestructive}
+        onPrimary={dialog.onPrimary}
+        onSecondary={dialog.onSecondary}
+        onDismiss={closeDialog}
+      />
+
+      <Modal visible={showEmailModal} transparent animationType="fade" onRequestClose={() => setShowEmailModal(false)}>
+        <Pressable style={styles.emailModalBackdrop} onPress={() => setShowEmailModal(false)}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.emailModalAvoid}
+          >
+            <Pressable style={styles.emailModalCardOuter} onPress={(e) => e.stopPropagation()}>
+              <LinearGradient
+                colors={['#FFFFFF', '#FBF4EF', '#F3E7DF']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.emailModalCard}
+              >
+                <Text style={styles.emailModalTitle}>Sincronizar con email</Text>
+                <Text style={styles.emailModalMessage}>
+                  Vincula tu correo para acceder a tu guardarropa desde cualquier dispositivo. Te
+                  enviaremos un enlace de confirmación.
+                </Text>
+                <TextInput
+                  value={linkEmailDraft}
+                  onChangeText={setLinkEmailDraft}
+                  style={[styles.input, styles.emailModalInput]}
+                  placeholder="tu@correo.com"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!busy}
+                />
+                <TouchableOpacity
+                  style={[naimButtons.primary, busy && styles.disabledButton]}
+                  onPress={() => void handleLinkEmail()}
+                  disabled={busy}
+                  activeOpacity={0.85}
+                >
+                  <Text style={naimButtons.primaryText}>Enviar confirmación</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[naimButtons.secondary, styles.emailModalCancel, busy && styles.disabledButton]}
+                  onPress={() => setShowEmailModal(false)}
+                  disabled={busy}
+                  activeOpacity={0.75}
+                >
+                  <Text style={naimButtons.secondaryText}>Cancelar</Text>
+                </TouchableOpacity>
+              </LinearGradient>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -260,22 +607,9 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.xxl,
     gap: spacing.md,
-  },
-  title: {
-    fontSize: 24,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily.semiBold,
-    letterSpacing: 0.4,
-  },
-  subtitle: {
-    marginTop: 4,
-    color: colors.textSecondary,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: 14,
-    marginBottom: spacing.xs,
   },
   card: {
     backgroundColor: colors.surfaceElevated,
@@ -291,33 +625,54 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.semiBold,
     marginBottom: spacing.sm,
   },
-  avatarRow: {
-    flexDirection: 'row',
+  avatarSection: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
+    marginTop: spacing.xs,
+  },
+  avatarWrap: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarCircle: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceElevated,
+    ...subtleBrightBorder,
   },
   avatarImage: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    borderWidth: 1,
-    borderColor: colors.border,
+    width: '100%',
+    height: '100%',
   },
-  avatarPlaceholder: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+  avatarPlaceholderInner: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: colors.primaryMuted,
-    borderWidth: 1,
-    borderColor: colors.primaryVariant,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarInitial: {
-    fontSize: 26,
-    color: colors.textPrimary,
+    fontSize: 40,
+    color: colors.primaryVariant,
     fontFamily: typography.fontFamily.semiBold,
+  },
+  trashButton: {
+    position: 'absolute',
+    bottom: 2,
+    right: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.card,
   },
   inputLabel: {
     color: colors.textSecondary,
@@ -335,44 +690,93 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontFamily: typography.fontFamily.regular,
     fontSize: 15,
-    marginBottom: spacing.md,
+    marginBottom: 0,
   },
-  secondaryButton: {
-    borderWidth: 1,
-    borderColor: colors.primaryVariant,
-    borderRadius: radius.pill,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-  },
-  secondaryButtonText: {
-    color: colors.primaryVariant,
-    fontFamily: typography.fontFamily.semiBold,
-    fontSize: 14,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.sm + 2,
+  privacyLinkWrap: {
     alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: colors.onPrimary,
-    fontFamily: typography.fontFamily.semiBold,
-    fontSize: 15,
-  },
-  signOutButton: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
+    paddingVertical: spacing.md,
     marginTop: spacing.xs,
   },
-  signOutText: {
-    color: colors.textPrimary,
+  privacyLink: {
+    fontSize: 14,
+    color: colors.primaryVariant,
     fontFamily: typography.fontFamily.regular,
+    letterSpacing: 0.3,
+  },
+  protectButton: {
+    ...naimButtons.primary,
+    marginBottom: spacing.sm,
+  },
+  protectButtonText: {
+    ...naimButtons.primaryText,
+    textAlign: 'center',
+    letterSpacing: 0.4,
+  },
+  signOutButton: {
+    ...naimButtons.muted,
+    marginTop: spacing.xs,
+  },
+  accountHint: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  accountHintProtected: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: 13,
+    color: colors.primaryVariant,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  emailModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(33, 37, 41, 0.42)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  emailModalAvoid: {
+    width: '100%',
+  },
+  emailModalCardOuter: {
+    width: '100%',
+    maxWidth: 340,
+    alignSelf: 'center',
+    borderRadius: radius.xl,
+    borderWidth: 1.5,
+    borderColor: 'rgba(221, 190, 169, 0.85)',
+    overflow: 'hidden',
+    ...shadows.elevated,
+  },
+  emailModalCard: {
+    padding: spacing.lg,
+  },
+  emailModalTitle: {
+    fontFamily: typography.fontFamily.vogue,
+    fontSize: 22,
+    letterSpacing: 1.2,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  emailModalMessage: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  emailModalCancel: {
+    marginTop: spacing.sm,
+  },
+  emailModalInput: {
+    marginBottom: spacing.md,
+  },
+  signOutText: {
+    ...naimButtons.mutedText,
     textAlign: 'center',
   },
   deleteTextWrap: {

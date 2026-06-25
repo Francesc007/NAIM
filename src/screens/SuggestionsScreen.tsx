@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
+  ImageBackground,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useGarments } from '../context/GarmentContext';
@@ -15,6 +16,8 @@ import { GarmentCard } from '../components/GarmentCard';
 import { StackBottomNav } from '../components/StackBottomNav';
 import { SkeletonOutfitCard } from '../components/ui/SkeletonOutfitCard';
 import { colors, radius, shadows, spacing, subtleBrightBorder, typography } from '../theme';
+
+const EMPTY_WARDROBE_IMAGE = require('../../assets/empty/guardarropa-vacio.jpg');
 
 function formatOccasionLabel(value: string): string {
   if (!value) return value;
@@ -138,7 +141,7 @@ export function SuggestionsScreen() {
     for (const g of suggestion.garments) {
       await markWorn(g.id);
     }
-    navigation.navigate('MainHome', { screen: 'Home' });
+    navigation.navigate('Main', { screen: 'Home' });
   };
 
   const handleNextOption = () => {
@@ -159,19 +162,20 @@ export function SuggestionsScreen() {
   if (garments.length < 1) {
     return (
       <View style={styles.wrapper}>
-        <View style={styles.empty}>
-          <Text style={styles.emptyEmoji}>👔</Text>
-          <Text style={styles.emptyTitle}>Necesitas al menos 1 prenda</Text>
-          <Text style={styles.emptySubtitle}>
-            Añade más prendas a tu guardarropa para recibir sugerencias de outfit
-          </Text>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => navigation.navigate('MainHome', { screen: 'Add' })}
-          >
-            <Text style={styles.primaryButtonText}>Añadir prenda</Text>
-          </TouchableOpacity>
-        </View>
+        <ImageBackground source={EMPTY_WARDROBE_IMAGE} style={styles.emptyBackground} resizeMode="cover">
+          <View style={styles.emptyOverlay}>
+            <Text style={styles.emptyTitle}>Necesitas al menos 1 prenda</Text>
+            <Text style={styles.emptySubtitle}>
+              Añade más prendas a tu guardarropa para recibir sugerencias de outfit
+            </Text>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => navigation.navigate('Main', { screen: 'Add' })}
+            >
+              <Text style={styles.primaryButtonText}>Añadir prenda</Text>
+            </TouchableOpacity>
+          </View>
+        </ImageBackground>
         <StackBottomNav />
       </View>
     );
@@ -335,10 +339,35 @@ const styles = StyleSheet.create({
   loadingState: { paddingHorizontal: spacing.md, gap: spacing.md },
   loadingTitle: { fontSize: 16, fontFamily: typography.fontFamily.regular, letterSpacing: 0.2, color: colors.textPrimary, textAlign: 'center', marginTop: spacing.sm },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xxl },
-  emptyEmoji: { fontSize: 80, marginBottom: spacing.xl },
-  emptyTitle: { fontSize: 22, fontFamily: typography.fontFamily.light, letterSpacing: 0.5, color: colors.text, textAlign: 'center', marginBottom: spacing.sm },
-  emptySubtitle: { fontSize: 15, fontFamily: typography.fontFamily.light, color: colors.onSurfaceVariant, marginBottom: spacing.xl, textAlign: 'center' },
+  emptyBackground: { flex: 1, width: '100%' },
+  emptyOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xxl,
+    backgroundColor: 'rgba(255, 251, 247, 0.78)',
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontFamily: typography.fontFamily.semiBold,
+    letterSpacing: 0.5,
+    color: '#5C4033',
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+    textShadowColor: 'rgba(255, 255, 255, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
+  },
+  emptySubtitle: {
+    fontSize: 15,
+    fontFamily: typography.fontFamily.regular,
+    color: '#8B5E3C',
+    marginBottom: spacing.xl,
+    textAlign: 'center',
+    textShadowColor: 'rgba(255, 255, 255, 0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
   errorText: { fontSize: 14, fontFamily: typography.fontFamily.regular, color: colors.error, marginTop: 12, textAlign: 'center', paddingHorizontal: 16 },
   infoText: {
     fontSize: 15,

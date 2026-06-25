@@ -1,5 +1,5 @@
-import React from 'react';
-import { Text, View, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -9,11 +9,20 @@ import { WardrobeScreen } from '../screens/WardrobeScreen';
 import { AddGarmentScreen } from '../screens/AddGarmentScreen';
 import { SuggestionsScreen } from '../screens/SuggestionsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { PrivacyNoticeScreen } from '../screens/PrivacyNoticeScreen';
+import { LoginScreen } from '../screens/LoginScreen';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { GarmentProvider } from '../context/GarmentContext';
+import { AuthSessionProvider, useAuthSession } from '../context/AuthSessionContext';
 import { HomeHeader } from '../components/HomeHeader';
 import { NavGradientBackground } from '../components/NavGradientBackground';
 import { colors, shadows, spacing, typography } from '../theme';
 import { useTabBarBottomInset } from '../hooks/useTabBarBottomInset';
+import { supabase } from '../lib/supabase';
+import {
+  hasCompletedOnboardingLocal,
+  markOnboardingCompleted,
+} from '../services/authService';
 import type { RootStackParamList, TabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -130,55 +139,135 @@ function MainTabs() {
   );
 }
 
+function RootStackNavigator() {
+  const { session, booting, prefersLogin } = useAuthSession();
+  const [resolvingOnboarding, setResolvingOnboarding] = useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const resolveOnboarding = async () => {
+      if (!session || !supabase) {
+        if (mounted) {
+          setNeedsOnboarding(false);
+          setResolvingOnboarding(false);
+        }
+        return;
+      }
+
+      if (mounted) setResolvingOnboarding(true);
+
+      try {
+        const localDone = await hasCompletedOnboardingLocal();
+        const { data } = await supabase.auth.getUser();
+        const metadata = (data.user?.user_metadata ?? {}) as { onboarding_completed?: boolean };
+        const remoteDone = metadata.onboarding_completed === true;
+
+        if (!mounted) return;
+
+        if (remoteDone && !localDone) {
+          await markOnboardingCompleted();
+        }
+
+        setNeedsOnboarding(!(localDone || remoteDone));
+      } catch (err) {
+        console.warn('[NAIM] Resolver onboarding:', err);
+        if (mounted) setNeedsOnboarding(true);
+      } finally {
+        if (mounted) setResolvingOnboarding(false);
+      }
+    };
+
+    void resolveOnboarding();
+
+    return () => {
+      mounted = false;
+    };
+    // Solo cuando cambia el usuario (login/logout), no al actualizar nombre/foto.
+  }, [session?.user?.id]);
+
+  if (booting || resolvingOnboarding) {
+    return (
+      <View style={styles.bootWrap}>
+        <ActivityIndicator size="large" color={colors.primaryVariant} />
+      </View>
+    );
+  }
+
+  return (
+    <Stack.Navigator
+      key={
+        session
+          ? needsOnboarding
+            ? 'authenticated-onboarding'
+            : 'authenticated-main'
+          : prefersLogin
+            ? 'login'
+            : 'unauth-onboarding'
+      }
+      initialRouteName={
+        session ? (needsOnboarding ? 'Onboarding' : 'Main') : prefersLogin ? 'Login' : 'Onboarding'
+      }
+      screenOptions={{
+        headerStyle: styles.header,
+        headerBackground: () => <NavGradientBackground />,
+        headerTintColor: colors.textPrimary,
+        headerTitleAlign: 'center',
+        headerTitleStyle,
+        headerShadowVisible: false,
+      }}
+    >
+      <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="AddGarment"
+        component={AddGarmentScreen}
+        options={{
+          title: 'Añadir Prenda',
+          headerBackVisible: false,
+          headerLeft: () => null,
+        }}
+      />
+      <Stack.Screen
+        name="Suggestions"
+        component={SuggestionsScreen}
+        options={{
+          title: 'Sugerencias de Hoy',
+          headerBackVisible: false,
+          headerLeft: () => null,
+        }}
+      />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Ajustes de Perfil' }} />
+      <Stack.Screen
+        name="PrivacyNotice"
+        component={PrivacyNoticeScreen}
+        options={{ title: 'Aviso de Privacidad' }}
+      />
+    </Stack.Navigator>
+  );
+}
+
 export function AppNavigator() {
   return (
-    <GarmentProvider>
-      <NavigationContainer>
-        <Stack.Navigator
-          screenOptions={{
-            headerStyle: styles.header,
-            headerBackground: () => <NavGradientBackground />,
-            headerTintColor: colors.textPrimary,
-            headerTitleAlign: 'center',
-            headerTitleStyle,
-            headerShadowVisible: false,
-          }}
-        >
-          <Stack.Screen
-            name="MainHome"
-            component={MainTabs}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="AddGarment"
-            component={AddGarmentScreen}
-            options={{
-              title: 'Añadir Prenda',
-              headerBackVisible: false,
-              headerLeft: () => null,
-            }}
-          />
-          <Stack.Screen
-            name="Suggestions"
-            component={SuggestionsScreen}
-            options={{
-              title: 'Sugerencias de Hoy',
-              headerBackVisible: false,
-              headerLeft: () => null,
-            }}
-          />
-          <Stack.Screen
-            name="Settings"
-            component={SettingsScreen}
-            options={{ title: 'Ajustes de Perfil' }}
-          />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </GarmentProvider>
+    <AuthSessionProvider>
+      <GarmentProvider>
+        <NavigationContainer>
+          <RootStackNavigator />
+        </NavigationContainer>
+      </GarmentProvider>
+    </AuthSessionProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  bootWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
   header: {
     backgroundColor: 'transparent',
   },

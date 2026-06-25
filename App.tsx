@@ -18,7 +18,6 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { UserProvider } from './src/context/UserContext';
 import { WeatherProvider } from './src/context/WeatherContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { supabase } from './src/lib/supabase';
 import { logEnvDiagnostics } from './src/utils/env';
 
 SplashScreen.preventAutoHideAsync();
@@ -26,25 +25,6 @@ SplashScreen.preventAutoHideAsync();
 export default function App() {
   useEffect(() => {
     logEnvDiagnostics();
-  }, []);
-
-  useEffect(() => {
-    if (!supabase) return;
-    (async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          const { data, error } = await supabase.auth.signInAnonymously();
-          if (error) console.warn('[NAIM] signInAnonymously error:', error);
-          else {
-            const id = data.user?.id ?? null;
-            console.log('[NAIM] signInAnonymously OK — user.id:', id ?? 'NULL');
-          }
-        }
-      } catch (err) {
-        console.warn('[NAIM] Auth falló:', err);
-      }
-    })();
   }, []);
 
   const [fontsLoaded, fontError] = useFonts({

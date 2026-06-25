@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,13 @@ import {
   Pressable,
   useWindowDimensions,
   ActivityIndicator,
+  Image,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { useWeather } from '../context/WeatherContext';
-import { colors, radius, shadows, spacing, typography } from '../theme';
+import { useUser, getUserInitial } from '../context/UserContext';
+import { colors, naimButtons, radius, spacing, typography } from '../theme';
 import { APP_NAME } from '../constants/mockData';
 
 /** Iconos estilo Google Weather — emojis coloridos */
@@ -44,6 +45,7 @@ const WEATHER_MODAL_GRADIENT = ['#FFFFFF', '#F7EBE2', '#EFD9C8', '#DDBEA9'] as c
 
 export function HomeHeader() {
   const navigation = useNavigation();
+  const { userName, avatarUrl, avatarDisplayUrl } = useUser();
   const { width } = useWindowDimensions();
   const { greeting, temp, icon, loading, locationError, apiError } = useWeather();
   const [modalVisible, setModalVisible] = useState(false);
@@ -122,6 +124,8 @@ export function HomeHeader() {
   };
 
   const showWeather = !loading && !locationError && (temp !== null || icon !== null || greeting !== null);
+  const profileInitial = useMemo(() => getUserInitial(userName), [userName]);
+  const profileImageUri = avatarDisplayUrl ?? avatarUrl;
   const openSettings = () => {
     const parentNavigation = navigation.getParent();
     if (parentNavigation) {
@@ -134,7 +138,24 @@ export function HomeHeader() {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <View style={styles.leftColumn} />
+        <View style={styles.leftColumn} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.profileButton}
+            onPress={openSettings}
+            activeOpacity={0.75}
+          >
+            {profileImageUri ? (
+              <Image
+                key={profileImageUri}
+                source={{ uri: profileImageUri }}
+                style={styles.profileAvatar}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={styles.profileInitial}>{profileInitial}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
         <View style={styles.centerColumn} pointerEvents="box-none">
           <Text style={[styles.title, { fontSize: titleSize, lineHeight: titleSize * 1.25 }]} allowFontScaling={false}>
             {APP_NAME}
@@ -159,13 +180,6 @@ export function HomeHeader() {
               )}
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={openSettings}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="settings-outline" size={18} color={colors.primaryVariant} />
-          </TouchableOpacity>
         </View>
       </View>
       {(locationError || apiError) && (
@@ -208,8 +222,8 @@ export function HomeHeader() {
                     )}
                   </View>
                   <Text style={styles.modalMessage}>{greeting ?? ''}</Text>
-                  <TouchableOpacity style={styles.modalButton} onPress={closeModal}>
-                    <Text style={styles.modalButtonText}>Gracias</Text>
+                  <TouchableOpacity style={[naimButtons.primary, naimButtons.primaryStandalone]} onPress={closeModal}>
+                    <Text style={naimButtons.primaryText}>Gracias</Text>
                   </TouchableOpacity>
                 </LinearGradient>
               </View>
@@ -235,8 +249,11 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   leftColumn: {
-    width: 44,
+    width: 56,
     minHeight: 40,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    zIndex: 1,
   },
   centerColumn: {
     position: 'absolute',
@@ -267,18 +284,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 4,
+    width: 56,
     paddingLeft: 12,
+    zIndex: 1,
   },
   profileButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceElevated,
+    borderColor: colors.primaryVariant,
+    backgroundColor: colors.primaryMuted,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  profileAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  profileInitial: {
+    fontSize: 16,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primaryVariant,
   },
   weatherChip: {
     flexDirection: 'row',
@@ -308,7 +336,7 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   weatherEmoji: {
-    fontSize: 20,
+    fontSize: 24,
   },
   tempText: {
     fontFamily: typography.fontFamily.semiBold,
@@ -385,7 +413,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.6)',
   },
   modalEmoji: {
-    fontSize: 30,
+    fontSize: 36,
   },
   modalTemp: {
     fontFamily: typography.fontFamily.bold,
@@ -401,19 +429,5 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     marginBottom: spacing.lg,
     paddingHorizontal: spacing.xs,
-  },
-  modalButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.xxl,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    borderColor: colors.primaryVariant,
-    ...shadows.elevated,
-  },
-  modalButtonText: {
-    fontFamily: typography.fontFamily.semiBold,
-    fontSize: 14,
-    color: colors.onPrimary,
   },
 });
