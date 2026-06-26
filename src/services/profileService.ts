@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from '../lib/supabase';
+import { localUriToArrayBuffer } from '../utils/localUriToArrayBuffer';
 import { deleteAllUserStorageFiles, extractStoragePath } from './imageStorageService';
 import { getAuthRedirectUrl, isValidEmail, normalizeEmail } from './authService';
 
@@ -18,12 +19,6 @@ type ProfileMetadata = {
   climate_preference?: string;
   onboarding_completed?: boolean;
 };
-
-async function uriToArrayBuffer(uri: string): Promise<ArrayBuffer> {
-  const response = await fetch(uri);
-  if (!response.ok) throw new Error(`No se pudo leer la imagen: ${response.status}`);
-  return response.arrayBuffer();
-}
 
 /** Redimensiona y comprime a JPEG — óptimo para avatares pequeños en Storage. */
 async function prepareAvatarForUpload(localUri: string): Promise<string> {
@@ -288,7 +283,7 @@ export async function uploadProfileImage(localUri: string): Promise<string> {
   const version = Date.now();
   const storagePath = `${user.id}/${AVATAR_FOLDER}/avatar-${version}.jpg`;
   const preparedUri = await prepareAvatarForUpload(localUri);
-  const body = await uriToArrayBuffer(preparedUri);
+  const body = await localUriToArrayBuffer(preparedUri);
 
   const { error: uploadError } = await supabase.storage.from(PROFILE_BUCKET).upload(storagePath, body, {
     upsert: false,

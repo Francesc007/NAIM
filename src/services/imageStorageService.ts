@@ -1,15 +1,10 @@
 import { supabase } from '../lib/supabase';
+import { localUriToArrayBuffer } from '../utils/localUriToArrayBuffer';
 import { getCurrentUserId } from './databaseService';
 
 const BUCKET = 'garment-images';
 const LIST_PAGE_SIZE = 100;
 const REMOVE_BATCH_SIZE = 100;
-
-async function uriToArrayBuffer(uri: string): Promise<ArrayBuffer> {
-  const response = await fetch(uri);
-  if (!response.ok) throw new Error(`No se pudo leer la imagen: ${response.status}`);
-  return response.arrayBuffer();
-}
 
 export function extractStoragePath(imagePath: string): string | null {
   if (!imagePath.includes(BUCKET)) return null;
@@ -81,7 +76,7 @@ export async function uploadGarmentImage(localUri: string, garmentId: string): P
   if (!userId) throw new Error('Usuario no autenticado');
 
   const path = `${userId}/${garmentId}.jpg`;
-  const body = await uriToArrayBuffer(localUri);
+  const body = await localUriToArrayBuffer(localUri);
 
   const { error } = await supabase.storage.from(BUCKET).upload(path, body, {
     upsert: true,
