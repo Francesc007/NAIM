@@ -38,12 +38,12 @@ module.exports = {
       policy: 'appVersion',
     },
     orientation: 'portrait',
-    icon: './assets/icon.png',
+    icon: './assets/naim.png',
     userInterfaceStyle: 'light',
     splash: {
-      image: './assets/splash-icon.png',
+      image: './assets/naim.png',
       resizeMode: 'contain',
-      backgroundColor: '#ffffff',
+      backgroundColor: '#F8F6F2',
     },
     ios: {
       bundleIdentifier: 'com.frank714mos.naim',
@@ -56,10 +56,9 @@ module.exports = {
     android: {
       package: 'com.frank714mos.naim',
       adaptiveIcon: {
-        backgroundColor: '#E6F4FE',
-        foregroundImage: './assets/android-icon-foreground.png',
-        backgroundImage: './assets/android-icon-background.png',
-        monochromeImage: './assets/android-icon-monochrome.png',
+        backgroundColor: '#F8F6F2',
+        foregroundImage: './assets/naim.png',
+        monochromeImage: './assets/naim.png',
       },
       predictiveBackGestureEnabled: false,
       intentFilters: [

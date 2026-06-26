@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Image,
   ImageBackground,
   KeyboardAvoidingView,
   Platform,
@@ -18,7 +19,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NaimDialog } from '../components/NaimDialog';
-import { APP_NAME } from '../constants/mockData';
 import { useAuthSession } from '../context/AuthSessionContext';
 import { useUser } from '../context/UserContext';
 import type { RootStackParamList } from '../navigation/types';
@@ -27,6 +27,7 @@ import {
   saveOnboardingPreferences,
 } from '../services/authService';
 import { createAnonymousSession, saveOnboardingProfile } from '../services/profileService';
+import { startGuestSession } from '../services/identityTransitionService';
 import { colors, naimButtons, radius, shadows, spacing, typography } from '../theme';
 
 type StyleOption = 'Casual' | 'Formal' | 'Negocios' | 'Sport';
@@ -40,15 +41,29 @@ const STEP_BACKGROUNDS = [
   require('../../assets/hero/t-shirt.jpg'),
   require('../../assets/hero/jeans.jpg'),
 ] as const;
+const NAIM_LOGO = require('../../assets/naim.png');
+const LOGO_ASSET = Image.resolveAssetSource(NAIM_LOGO);
+const LOGO_MAX_WIDTH = 252;
+const LOGO_CORNER_MAX_WIDTH = 50;
+const LOGO_IVORY = '#F8F6F2';
+const LOGO_INTRINSIC_WIDTH = LOGO_ASSET?.width ?? 1024;
+const LOGO_INTRINSIC_HEIGHT = LOGO_ASSET?.height ?? 1024;
+const LOGO_DISPLAY = {
+  width: LOGO_MAX_WIDTH,
+  height: (LOGO_MAX_WIDTH * LOGO_INTRINSIC_HEIGHT) / LOGO_INTRINSIC_WIDTH,
+};
+const LOGO_CORNER_DISPLAY = {
+  width: LOGO_CORNER_MAX_WIDTH,
+  height: (LOGO_CORNER_MAX_WIDTH * LOGO_INTRINSIC_HEIGHT) / LOGO_INTRINSIC_WIDTH,
+};
+const LOGO_CORNER_PLATE = {
+  width: LOGO_CORNER_DISPLAY.width + 10,
+  height: LOGO_CORNER_DISPLAY.height + 14,
+};
 
 const STEP_LABELS = ['Descubrir', 'Personalizar', 'Crear'] as const;
 
 const CARD_GRADIENTS = {
-  welcome: [
-    'rgba(255, 247, 240, 0.98)',
-    'rgba(248, 232, 218, 0.94)',
-    'rgba(255, 252, 249, 0.97)',
-  ],
   personalize: [
     'rgba(255, 255, 255, 0.98)',
     'rgba(253, 250, 247, 0.97)',
@@ -196,7 +211,7 @@ export function OnboardingScreen() {
     void (async () => {
       if (session) return;
       try {
-        const anonSession = await createAnonymousSession();
+        const anonSession = await startGuestSession();
         applySession(anonSession);
       } catch (err) {
         setDialog({
@@ -257,19 +272,12 @@ export function OnboardingScreen() {
     if (step === 0) {
       return (
         <>
-          <Text style={[styles.eyebrow, styles.eyebrowProminent]}>Bienvenida</Text>
-          <Text style={styles.title}>Tu asistente de estilo personal.</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.eyebrow, styles.eyebrowProminent, styles.welcomeEyebrow]}>Bienvenida</Text>
+          <Text style={[styles.title, styles.welcomeTitle]}>Tu asistente de estilo personal.</Text>
+          <Text style={[styles.subtitle, styles.welcomeSubtitle]}>
             NAIM organiza tu guardarropa inteligente y te ayuda a decidir qué ponerte cada día en
             segundos.
           </Text>
-          <TouchableOpacity
-            style={[naimButtons.primary, styles.mainAction]}
-            onPress={goNext}
-            activeOpacity={0.85}
-          >
-            <Text style={naimButtons.primaryText}>Siguiente</Text>
-          </TouchableOpacity>
         </>
       );
     }
@@ -278,13 +286,13 @@ export function OnboardingScreen() {
       return (
         <>
           <Text style={styles.eyebrow}>Personalización</Text>
-          <Text style={styles.title}>Personalización Express</Text>
+          <Text style={[styles.title, styles.titlePersonalize]}>Personalización Express</Text>
 
-          <Text style={styles.fieldLabel}>¿Cómo te llamas?</Text>
+          <Text style={[styles.fieldLabel, styles.fieldLabelCompact]}>¿Cómo te llamas?</Text>
           <TextInput
             value={name}
             onChangeText={setName}
-            style={styles.input}
+            style={[styles.input, styles.inputCompact]}
             placeholder="Tu nombre"
             placeholderTextColor={colors.onSurfaceVariant}
             autoCapitalize="words"
@@ -292,13 +300,13 @@ export function OnboardingScreen() {
             editable={!busy}
           />
 
-          <Text style={styles.fieldLabel}>¿Cuál es tu enfoque actual?</Text>
+          <Text style={[styles.fieldLabel, styles.fieldLabelCompact]}>¿Cuál es tu enfoque actual?</Text>
           <View style={styles.choiceWrap}>
             {STYLE_OPTIONS.map((item) => (
               <Pressable
                 key={item}
                 onPress={() => setStylePref(item)}
-                style={[styles.choiceChip, stylePref === item && styles.choiceChipActive]}
+                style={[styles.choiceChip, styles.choiceChipCompact, stylePref === item && styles.choiceChipActive]}
               >
                 <Text
                   style={[styles.choiceText, stylePref === item && styles.choiceTextActive]}
@@ -309,13 +317,13 @@ export function OnboardingScreen() {
             ))}
           </View>
 
-          <Text style={styles.fieldLabel}>¿Qué clima predomina en tu ciudad?</Text>
+          <Text style={[styles.fieldLabel, styles.fieldLabelCompact]}>¿Qué clima predomina en tu ciudad?</Text>
           <View style={styles.choiceWrap}>
             {CLIMATE_OPTIONS.map((item) => (
               <Pressable
                 key={item}
                 onPress={() => setClimatePref(item)}
-                style={[styles.choiceChip, climatePref === item && styles.choiceChipActive]}
+                style={[styles.choiceChip, styles.choiceChipCompact, climatePref === item && styles.choiceChipActive]}
               >
                 <Text
                   style={[styles.choiceText, climatePref === item && styles.choiceTextActive]}
@@ -326,7 +334,7 @@ export function OnboardingScreen() {
             ))}
           </View>
 
-          <View style={styles.actionsRow}>
+          <View style={[styles.actionsRow, styles.actionsRowCompact]}>
             <TouchableOpacity
               style={[naimButtons.secondary, naimButtons.actionInRow]}
               onPress={goBack}
@@ -367,7 +375,7 @@ export function OnboardingScreen() {
             activeOpacity={0.8}
             disabled={busy}
           >
-            <Text style={naimButtons.secondaryText}>Editar</Text>
+            <Text style={naimButtons.secondaryText}>Atrás</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[naimButtons.primary, styles.createAction, busy && styles.disabled]}
@@ -407,13 +415,52 @@ export function OnboardingScreen() {
       </View>
 
       <LinearGradient
-        colors={['rgba(248,249,250,0.72)', 'rgba(248,249,250,0.88)', 'rgba(248,249,250,0.97)']}
+        colors={['rgba(248,249,250,0.68)', 'rgba(248,249,250,0.84)', 'rgba(248,249,250,0.93)']}
         style={[styles.overlay, { paddingTop: insets.top + spacing.xl }]}
       >
-        <View style={styles.topBar}>
-          <View style={styles.brandWrap}>
-            <Text style={styles.brand}>{APP_NAME}</Text>
-          </View>
+        <View style={[styles.topBar, step > 0 && styles.topBarWithLogo]}>
+          {step > 0 ? (
+            <View
+              style={[
+                styles.logoCornerCluster,
+                {
+                  width: LOGO_CORNER_PLATE.width,
+                  height: LOGO_CORNER_PLATE.height,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.logoCornerPlate,
+                  {
+                    width: LOGO_CORNER_PLATE.width,
+                    height: LOGO_CORNER_PLATE.height,
+                  },
+                ]}
+              />
+              <View
+                style={[
+                  styles.logoImageFrame,
+                  styles.logoCornerImage,
+                  {
+                    width: LOGO_CORNER_DISPLAY.width,
+                    height: LOGO_CORNER_DISPLAY.height,
+                  },
+                ]}
+              >
+                <Image
+                  source={NAIM_LOGO}
+                  style={{
+                    width: LOGO_CORNER_DISPLAY.width,
+                    height: LOGO_CORNER_DISPLAY.height,
+                  }}
+                  resizeMode="cover"
+                />
+              </View>
+            </View>
+          ) : (
+            <View style={styles.topBarLeading} />
+          )}
           <Text style={styles.stepCounter}>
             {String(step + 1).padStart(2, '0')} / 03
           </Text>
@@ -422,36 +469,98 @@ export function OnboardingScreen() {
         <VogueProgress step={step} />
 
         {step === 0 ? (
-          <View style={styles.welcomeBody}>
-            <Animated.View
-              style={[
-                styles.card,
-                styles.cardWelcome,
-                {
-                  opacity: cardOpacity,
-                  transform: [{ translateX: cardTranslate }],
-                },
-              ]}
-            >
-              <LinearGradient
-                colors={[...CARD_GRADIENTS.welcome]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.cardGradient}
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={[
+              styles.welcomeScrollContent,
+              { paddingBottom: insets.bottom + spacing.md },
+            ]}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.welcomeColumn}>
+              <View style={styles.logoBetweenWrap}>
+                <View
+                  style={[
+                    styles.logoImageFrame,
+                    { width: LOGO_DISPLAY.width, height: LOGO_DISPLAY.height },
+                  ]}
+                >
+                  <Image
+                    source={NAIM_LOGO}
+                    style={{ width: LOGO_DISPLAY.width, height: LOGO_DISPLAY.height }}
+                    resizeMode="cover"
+                  />
+                </View>
+              </View>
+
+              <Animated.View
+                style={[
+                  styles.card,
+                  styles.cardWelcomeCompact,
+                  {
+                    opacity: cardOpacity,
+                    transform: [{ translateX: cardTranslate }],
+                  },
+                ]}
               >
-                {renderStepContent()}
-              </LinearGradient>
-            </Animated.View>
-          </View>
+                <LinearGradient
+                  colors={[...CARD_GRADIENTS.personalize]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.cardGradient, styles.cardGradientWelcome]}
+                >
+                  {renderStepContent()}
+                </LinearGradient>
+              </Animated.View>
+
+              <View style={styles.welcomeActions}>
+                <TouchableOpacity
+                  style={[naimButtons.primary, styles.welcomeActionButton]}
+                  onPress={goNext}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[naimButtons.primaryText, styles.welcomeActionPrimaryText]}>
+                    Siguiente
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[naimButtons.secondary, styles.welcomeActionButton]}
+                  onPress={() => navigation.navigate('Login')}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[naimButtons.secondaryText, styles.welcomeActionSecondaryText]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
+                    Ya tengo cuenta
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
         ) : (
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={styles.flex}
           >
-            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              contentContainerStyle={[
+                styles.content,
+                styles.contentWithCornerLogo,
+                step === 1 && styles.contentPersonalize,
+              ]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={step !== 1}
+              bounces={step !== 1}
+            >
               <Animated.View
                 style={[
                   styles.card,
+                  step === 1 && styles.cardPersonalize,
                   step === 2 && styles.cardCreate,
                   {
                     opacity: cardOpacity,
@@ -463,7 +572,7 @@ export function OnboardingScreen() {
                   colors={[...(step === 1 ? CARD_GRADIENTS.personalize : CARD_GRADIENTS.create)]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.cardGradient}
+                  style={[styles.cardGradient, step === 1 && styles.cardGradientPersonalize]}
                 >
                   {renderStepContent()}
                 </LinearGradient>
@@ -506,23 +615,75 @@ const styles = StyleSheet.create({
   },
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'flex-end',
+    marginBottom: spacing.sm,
+  },
+  topBarWithLogo: {
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: spacing.md,
   },
-  brandWrap: {
-    alignSelf: 'flex-start',
-    paddingBottom: 2,
+  topBarLeading: {
+    flex: 1,
   },
-  brand: {
-    fontFamily: typography.fontFamily.vogue,
-    fontSize: 40,
-    letterSpacing: 16,
-    lineHeight: 46,
-    color: colors.textPrimary,
-    transform: [{ scaleY: 1.28 }],
-    transformOrigin: 'left top',
-    includeFontPadding: false,
+  logoCornerCluster: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -10,
+  },
+  logoCornerPlate: {
+    position: 'absolute',
+    backgroundColor: LOGO_IVORY,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(201, 168, 138, 0.28)',
+  },
+  logoCornerImage: {
+    zIndex: 1,
+  },
+  logoBetweenWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginTop: spacing.xs,
+  },
+  welcomeScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+  },
+  welcomeColumn: {
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.xs,
+  },
+  welcomeActions: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    width: '92%',
+    maxWidth: 340,
+    gap: spacing.xs,
+    flexShrink: 0,
+  },
+  welcomeActionButton: {
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.xs,
+    minHeight: 42,
+  },
+  welcomeActionPrimaryText: {
+    fontSize: 14,
+    letterSpacing: 0.2,
+  },
+  welcomeActionSecondaryText: {
+    fontSize: 13,
+    letterSpacing: 0.1,
+  },
+  logoImageFrame: {
+    borderRadius: radius.lg,
+    overflow: 'hidden',
   },
   stepCounter: {
     fontFamily: typography.fontFamily.vogue,
@@ -531,7 +692,7 @@ const styles = StyleSheet.create({
     color: '#9A7358',
   },
   progressWrap: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
   },
   progressTrack: {
     height: 3,
@@ -581,14 +742,16 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.regular,
     color: '#7A5C47',
   },
-  welcomeBody: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingBottom: spacing.xl,
-  },
   content: {
     flexGrow: 1,
     justifyContent: 'center',
+  },
+  contentWithCornerLogo: {
+    justifyContent: 'flex-start',
+    paddingTop: spacing.xxl,
+  },
+  contentPersonalize: {
+    paddingTop: spacing.xl,
   },
   card: {
     backgroundColor: 'rgba(255,255,255,0.92)',
@@ -598,18 +761,44 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(221, 190, 169, 0.65)',
     ...shadows.elevated,
   },
-  cardWelcome: {
-    borderColor: 'rgba(201, 168, 138, 0.75)',
-    shadowColor: '#A67C52',
-    shadowOpacity: 0.14,
-    shadowRadius: 18,
-    elevation: 6,
+  cardWelcomeCompact: {
+    alignSelf: 'center',
+    width: '92%',
+    maxWidth: 360,
+    flexShrink: 0,
+  },
+  cardGradientWelcome: {
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.sm + 4,
+  },
+  welcomeEyebrow: {
+    fontSize: 12,
+    letterSpacing: 2.5,
+    marginBottom: 4,
+  },
+  welcomeTitle: {
+    fontSize: 21,
+    lineHeight: 27,
+    marginBottom: 4,
+  },
+  welcomeSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 0,
   },
   cardCreate: {
     borderColor: 'rgba(221, 190, 169, 0.7)',
   },
+  cardPersonalize: {
+    borderColor: 'rgba(221, 190, 169, 0.62)',
+  },
   cardGradient: {
     padding: spacing.lg,
+  },
+  cardGradientPersonalize: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm + 2,
   },
   createAction: {
     flex: 1.35,
@@ -645,6 +834,11 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
+  titlePersonalize: {
+    fontSize: 26,
+    lineHeight: 32,
+    marginBottom: spacing.xs,
+  },
   subtitle: {
     fontFamily: typography.fontFamily.regular,
     fontSize: 15,
@@ -658,6 +852,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
   },
+  fieldLabelCompact: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.xxs,
+    fontSize: 13,
+  },
   input: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -668,6 +867,10 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontFamily: typography.fontFamily.regular,
     fontSize: 15,
+  },
+  inputCompact: {
+    paddingVertical: spacing.xs + 2,
+    fontSize: 14,
   },
   choiceWrap: {
     flexDirection: 'row',
@@ -681,6 +884,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  choiceChipCompact: {
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs,
   },
   choiceChipActive: {
     backgroundColor: colors.primaryMuted,
@@ -699,6 +906,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  actionsRowCompact: {
+    marginTop: spacing.md,
   },
   mainAction: {
     marginTop: spacing.lg,

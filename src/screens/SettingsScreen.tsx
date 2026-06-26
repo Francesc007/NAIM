@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { NaimDialog, NaimDialogTone } from '../components/NaimDialog';
@@ -25,13 +25,19 @@ import { useAuthSession } from '../context/AuthSessionContext';
 import { useUser, GUEST_DISPLAY_NAME, getUserInitial } from '../context/UserContext';
 import { colors, naimButtons, radius, shadows, spacing, subtleBrightBorder, typography } from '../theme';
 import type { RootStackParamList } from '../navigation/types';
+import { isValidEmail, markProtectionNoticeSeen } from '../services/authService';
+import {
+  assessPasswordLogin,
+  completePasswordLogin,
+  IdentityNeedsDiscardError,
+} from '../services/identityTransitionService';
 import {
   isAccountDataProtected,
   signOutAndPurgeUnprotectedAccount,
   signOutProtectedAccount,
 } from '../services/accountProtectionService';
+import { startGuestSession } from '../services/identityTransitionService';
 import {
-  createAnonymousSession,
   deleteCurrentAccount,
   getProfileFromSupabase,
   linkAnonymousAccount,
@@ -58,9 +64,16 @@ const initialDialog: DialogState = {
   message: '',
 };
 
+const NAIM_LOGO = require('../../assets/naim.png');
+const SETTINGS_LOGO_ASSET = Image.resolveAssetSource(NAIM_LOGO);
+const SETTINGS_LOGO_WIDTH = 100;
+const SETTINGS_LOGO_HEIGHT =
+  (SETTINGS_LOGO_WIDTH * (SETTINGS_LOGO_ASSET?.height ?? 1024)) /
+  (SETTINGS_LOGO_ASSET?.width ?? 1024);
+
 export function SettingsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { requestLoginScreen } = useAuthSession();
+  const { requestLoginScreen, applySession, refreshSession } = useAuthSession();
   const { userName, setUserName, avatarUrl, avatarDisplayUrl, setAvatarUrl, resetLocalProfile } = useUser();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -72,6 +85,10 @@ export function SettingsScreen() {
   const [emailConfirmed, setEmailConfirmed] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [linkEmailDraft, setLinkEmailDraft] = useState('');
+  const [accountLoginOpen, setAccountLoginOpen] = useState(false);
+  const [loginEmailDraft, setLoginEmailDraft] = useState('');
+  const [loginPasswordDraft, setLoginPasswordDraft] = useState('');
+  const [linkPasswordDraft, setLinkPasswordDraft] = useState('');
 
   const profileImageUri = avatarDisplayUrl ?? avatarUrl;
   const accountProtected = isAccountDataProtected({
@@ -79,6 +96,13 @@ export function SettingsScreen() {
     emailConfirmed,
     isAnonymous,
   });
+  const showEmailSyncUi = !emailConfirmed;
+
+  const isDefaultNaimGuest = useMemo(() => {
+    if (accountProtected || accountEmail) return false;
+    const name = savedNameBaseline.trim();
+    return !name || name === GUEST_DISPLAY_NAME;
+  }, [accountProtected, accountEmail, savedNameBaseline]);
 
   const showDialog = (config: Omit<DialogState, 'visible'>) => {
     setDialog({ ...config, visible: true });
@@ -86,28 +110,33 @@ export function SettingsScreen() {
 
   const closeDialog = () => setDialog(initialDialog);
 
+  const reloadProfile = useCallback(async () => {
+    try {
+      const profile = await getProfileFromSupabase();
+      if (profile.avatarUrl) {
+        await setAvatarUrl(profile.avatarUrl);
+      }
+      const loadedName = (userName ?? profile.displayName ?? '').trim();
+      setDraftName(loadedName);
+      setSavedNameBaseline(loadedName);
+      setIsAnonymous(profile.isAnonymous);
+      setAccountEmail(profile.email);
+      setEmailConfirmed(profile.emailConfirmed);
+
+      if (profile.emailConfirmed && profile.email) {
+        await markProtectionNoticeSeen(profile.userId);
+      }
+    } catch (err) {
+      console.warn('[NAIM] Perfil ajustes:', err);
+    }
+  }, [setAvatarUrl, userName]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const profile = await getProfileFromSupabase();
-        if (!mounted) return;
-        if (profile.avatarUrl) {
-          await setAvatarUrl(profile.avatarUrl);
-        }
-        const loadedName = (userName ?? profile.displayName ?? '').trim();
-        setDraftName(loadedName);
-        setSavedNameBaseline(loadedName);
-        setIsAnonymous(profile.isAnonymous);
-        setAccountEmail(profile.email);
-        setEmailConfirmed(profile.emailConfirmed);
-      } catch (err) {
-        console.warn('[NAIM] Perfil ajustes:', err);
-        if (mounted) {
-          const fallback = (userName ?? '').trim();
-          setDraftName(fallback);
-          setSavedNameBaseline(fallback);
-        }
+        setLoading(true);
+        await reloadProfile();
       } finally {
         if (mounted) setLoading(false);
       }
@@ -119,11 +148,129 @@ export function SettingsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      void reloadProfile();
+    }, [reloadProfile])
+  );
+
   const initials = useMemo(() => {
     const trimmedDraft = draftName.trim();
     if (trimmedDraft) return trimmedDraft.slice(0, 1).toUpperCase();
     return getUserInitial(userName);
   }, [draftName, userName]);
+
+  const finishSettingsSignIn = async (discardWardrobe?: boolean) => {
+    const trimmed = loginEmailDraft.trim();
+    if (!isValidEmail(trimmed)) {
+      showDialog({
+        title: 'Correo necesario',
+        message: 'Introduce un correo válido para recuperar tu cuenta.',
+        tone: 'info',
+        primaryText: 'Entendido',
+      });
+      return;
+    }
+    if (!loginPasswordDraft.trim()) {
+      showDialog({
+        title: 'Contraseña necesaria',
+        message: 'Introduce la contraseña de tu cuenta NAIM.',
+        tone: 'info',
+        primaryText: 'Entendido',
+      });
+      return;
+    }
+
+    const session = await completePasswordLogin(trimmed, loginPasswordDraft, { discardWardrobe });
+    applySession(session);
+    await reloadProfile();
+    setAccountLoginOpen(false);
+    setLoginEmailDraft('');
+    setLoginPasswordDraft('');
+    showDialog({
+      title: 'Sesión iniciada',
+      message: 'Tu guardarropa está listo.',
+      tone: 'success',
+      primaryText: 'Entendido',
+    });
+  };
+
+  const handleSettingsSignIn = async () => {
+    setBusy(true);
+    try {
+      const assessment = await assessPasswordLogin();
+      if (assessment.status === 'needs_discard_confirmation') {
+        setBusy(false);
+        showDialog({
+          title: '¿Descartar este guardarropa?',
+          message:
+            'Hay datos locales sin respaldar. Para recuperar otra cuenta debes descartarlos o crear tu perfil primero.',
+          tone: 'warm',
+          primaryText: 'Descartar y continuar',
+          secondaryText: 'Cancelar',
+          primaryDestructive: true,
+          onPrimary: () => {
+            setBusy(true);
+            void (async () => {
+              try {
+                await finishSettingsSignIn(true);
+              } catch (err) {
+                showDialog({
+                  title: 'No pudimos iniciar sesión',
+                  message: err instanceof Error ? err.message : 'Inténtalo de nuevo.',
+                  tone: 'info',
+                  primaryText: 'Entendido',
+                });
+              } finally {
+                setBusy(false);
+              }
+            })();
+          },
+        });
+        return;
+      }
+
+      await finishSettingsSignIn();
+    } catch (err) {
+      if (err instanceof IdentityNeedsDiscardError) {
+        setBusy(false);
+        showDialog({
+          title: '¿Descartar este guardarropa?',
+          message: err.message,
+          tone: 'warm',
+          primaryText: 'Descartar y continuar',
+          secondaryText: 'Cancelar',
+          primaryDestructive: true,
+          onPrimary: () => {
+            setBusy(true);
+            void (async () => {
+              try {
+                await finishSettingsSignIn(true);
+              } catch (innerErr) {
+                showDialog({
+                  title: 'No pudimos iniciar sesión',
+                  message: innerErr instanceof Error ? innerErr.message : 'Inténtalo de nuevo.',
+                  tone: 'info',
+                  primaryText: 'Entendido',
+                });
+              } finally {
+                setBusy(false);
+              }
+            })();
+          },
+        });
+        return;
+      }
+      showDialog({
+        title: 'No pudimos iniciar sesión',
+        message: err instanceof Error ? err.message : 'Inténtalo de nuevo en un momento.',
+        tone: 'info',
+        primaryText: 'Entendido',
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const persistName = async (options?: { silent?: boolean }) => {
     const trimmed = draftName.trim();
@@ -251,21 +398,44 @@ export function SettingsScreen() {
       });
       return;
     }
+    if (linkPasswordDraft.length < 6) {
+      showDialog({
+        title: 'Contraseña necesaria',
+        message: 'Elige una contraseña de al menos 6 caracteres para iniciar sesión después.',
+        tone: 'info',
+        primaryText: 'Entendido',
+      });
+      return;
+    }
 
     setBusy(true);
     try {
-      await linkAnonymousAccount(trimmed);
-      setAccountEmail(trimmed.toLowerCase());
-      setEmailConfirmed(false);
+      const linked = await linkAnonymousAccount(trimmed, linkPasswordDraft);
+      await refreshSession();
+      setAccountEmail(linked.email);
+      setEmailConfirmed(linked.emailConfirmed);
+      setIsAnonymous(false);
       setShowEmailModal(false);
       setLinkEmailDraft('');
-      showDialog({
-        title: 'Revisa tu bandeja',
-        message:
-          'Te enviamos un enlace de confirmación. Ábrelo en este mismo teléfono para que NAIM vincule tu correo y proteja tu guardarropa.',
-        tone: 'success',
-        primaryText: 'Perfecto',
-      });
+      setLinkPasswordDraft('');
+
+      if (linked.emailConfirmed) {
+        const profile = await getProfileFromSupabase();
+        await markProtectionNoticeSeen(profile.userId);
+        showDialog({
+          title: 'Guardarropa protegido',
+          message: `Tu guardarropa queda respaldado en ${linked.email}.`,
+          tone: 'success',
+          primaryText: 'Entendido',
+        });
+      } else {
+        showDialog({
+          title: 'Confirma tu correo',
+          message: `Te enviamos un enlace a ${trimmed}. Ábrelo en este dispositivo para activar el respaldo de tu guardarropa.`,
+          tone: 'info',
+          primaryText: 'Entendido',
+        });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Inténtalo de nuevo en un momento.';
       const duplicate = message.toLowerCase().includes('ya está en uso');
@@ -356,6 +526,18 @@ export function SettingsScreen() {
       return;
     }
 
+    if (accountEmail && !emailConfirmed) {
+      showDialog({
+        title: 'Confirma tu correo',
+        message: `Tu correo ${accountEmail} está pendiente de confirmación. Revisa tu bandeja y ábrelo en este dispositivo. Hasta confirmarlo, el guardarropa no queda respaldado.`,
+        tone: 'warm',
+        primaryText: 'Entendido',
+        secondaryText: 'Cerrar sesión',
+        onSecondary: confirmUnprotectedSignOut,
+      });
+      return;
+    }
+
     showDialog({
       title: 'Antes de salir',
       message:
@@ -384,7 +566,8 @@ export function SettingsScreen() {
             await deleteCurrentAccount();
             await AsyncStorage.clear();
             await resetLocalProfile();
-            await createAnonymousSession();
+            const session = await startGuestSession();
+            applySession(session);
             setDraftName('');
             setSavedNameBaseline('');
             showDialog({
@@ -413,7 +596,7 @@ export function SettingsScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
         <View style={styles.loaderWrap}>
           <ActivityIndicator size="large" color={colors.primaryVariant} />
           <Text style={styles.loaderText}>Cargando ajustes...</Text>
@@ -423,12 +606,20 @@ export function SettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['bottom', 'left', 'right']}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        <View style={styles.brandLogoWrap}>
+          <Image
+            source={NAIM_LOGO}
+            style={{ width: SETTINGS_LOGO_WIDTH, height: SETTINGS_LOGO_HEIGHT }}
+            resizeMode="contain"
+          />
+        </View>
+
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Perfil</Text>
           <View style={styles.avatarSection}>
@@ -482,42 +673,108 @@ export function SettingsScreen() {
         </View>
 
         <View style={styles.card}>
-          {isAnonymous && !accountEmail ? (
-            <TouchableOpacity
-              style={[styles.protectButton, busy && styles.disabledButton]}
-              onPress={() => setShowEmailModal(true)}
-              disabled={busy}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.protectButtonText}>Sincronizar con email</Text>
-            </TouchableOpacity>
-          ) : null}
+          <Text style={styles.sectionTitle}>Cuenta</Text>
 
-          {accountEmail && !emailConfirmed ? (
-            <Text style={styles.accountHint}>
-              Confirmación pendiente en {accountEmail}. Revisa tu correo.
-            </Text>
-          ) : null}
+          {isDefaultNaimGuest ? (
+            <>
+              {!accountLoginOpen ? (
+                <TouchableOpacity
+                  style={[naimButtons.primary, styles.protectButton, busy && styles.disabledButton]}
+                  onPress={() => setAccountLoginOpen(true)}
+                  disabled={busy}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.protectButtonText}>Iniciar sesión</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <Text style={styles.accountLoginHint}>
+                    Escribe el correo y la contraseña de tu cuenta NAIM para cargar tu guardarropa al
+                    instante.
+                  </Text>
+                  <Text style={styles.inputLabel}>Correo electrónico</Text>
+                  <TextInput
+                    value={loginEmailDraft}
+                    onChangeText={setLoginEmailDraft}
+                    style={[styles.input, styles.accountLoginInput]}
+                    placeholder="tu@correo.com"
+                    placeholderTextColor={colors.onSurfaceVariant}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!busy}
+                  />
+                  <Text style={styles.inputLabel}>Contraseña</Text>
+                  <TextInput
+                    value={loginPasswordDraft}
+                    onChangeText={setLoginPasswordDraft}
+                    style={[styles.input, styles.accountLoginInput]}
+                    placeholder="Tu contraseña"
+                    placeholderTextColor={colors.onSurfaceVariant}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!busy}
+                  />
+                  <TouchableOpacity
+                    style={[naimButtons.primary, styles.protectButton, busy && styles.disabledButton]}
+                    onPress={() => void handleSettingsSignIn()}
+                    disabled={busy || !loginEmailDraft.trim() || !loginPasswordDraft.trim()}
+                    activeOpacity={0.85}
+                  >
+                    {busy ? (
+                      <ActivityIndicator color={colors.onPrimary} />
+                    ) : (
+                      <Text style={naimButtons.primaryText}>Iniciar sesión</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[naimButtons.muted, styles.createAccountButton, busy && styles.disabledButton]}
+                    onPress={() => navigation.navigate('Onboarding')}
+                    disabled={busy}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={naimButtons.mutedText}>Crear cuenta</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {showEmailSyncUi && !accountEmail ? (
+                <TouchableOpacity
+                  style={[styles.protectButton, busy && styles.disabledButton]}
+                  onPress={() => setShowEmailModal(true)}
+                  disabled={busy}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.protectButtonText}>Sincronizar con email</Text>
+                </TouchableOpacity>
+              ) : null}
 
-          {accountEmail && emailConfirmed ? (
-            <Text style={styles.accountHintProtected}>Sincronizado · {accountEmail}</Text>
-          ) : null}
+              {showEmailSyncUi && accountEmail ? (
+                <Text style={styles.accountHint}>
+                  Confirmación pendiente en {accountEmail}. Revisa tu correo.
+                </Text>
+              ) : null}
 
-          <TouchableOpacity
-            style={[styles.signOutButton, busy && styles.disabledButton]}
-            onPress={handleSignOut}
-            disabled={busy}
-          >
-            <Text style={styles.signOutText}>Cerrar Sesión</Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.signOutButton, busy && styles.disabledButton]}
+                onPress={handleSignOut}
+                disabled={busy}
+              >
+                <Text style={styles.signOutText}>Cerrar Sesión</Text>
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.deleteTextWrap}
-            onPress={handleDeleteAccount}
-            disabled={busy}
-          >
-            <Text style={styles.deleteText}>Eliminar Cuenta</Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteTextWrap}
+                onPress={handleDeleteAccount}
+                disabled={busy}
+              >
+                <Text style={styles.deleteText}>Eliminar Cuenta</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         <TouchableOpacity
@@ -557,9 +814,10 @@ export function SettingsScreen() {
               >
                 <Text style={styles.emailModalTitle}>Sincronizar con email</Text>
                 <Text style={styles.emailModalMessage}>
-                  Vincula tu correo para acceder a tu guardarropa desde cualquier dispositivo. Te
-                  enviaremos un enlace de confirmación.
+                  Vincula tu correo y elige una contraseña. Es posible que debas confirmar tu correo
+                  desde el enlace que te enviemos para respaldar tu guardarropa.
                 </Text>
+                <Text style={styles.inputLabel}>Correo electrónico</Text>
                 <TextInput
                   value={linkEmailDraft}
                   onChangeText={setLinkEmailDraft}
@@ -571,13 +829,25 @@ export function SettingsScreen() {
                   autoCorrect={false}
                   editable={!busy}
                 />
+                <Text style={styles.inputLabel}>Contraseña</Text>
+                <TextInput
+                  value={linkPasswordDraft}
+                  onChangeText={setLinkPasswordDraft}
+                  style={[styles.input, styles.emailModalInput]}
+                  placeholder="Mínimo 6 caracteres"
+                  placeholderTextColor={colors.onSurfaceVariant}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!busy}
+                />
                 <TouchableOpacity
                   style={[naimButtons.primary, busy && styles.disabledButton]}
                   onPress={() => void handleLinkEmail()}
-                  disabled={busy}
+                  disabled={busy || !linkEmailDraft.trim() || linkPasswordDraft.length < 6}
                   activeOpacity={0.85}
                 >
-                  <Text style={naimButtons.primaryText}>Enviar confirmación</Text>
+                  <Text style={naimButtons.primaryText}>Guardar cuenta</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[naimButtons.secondary, styles.emailModalCancel, busy && styles.disabledButton]}
@@ -607,9 +877,14 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
+    paddingTop: 0,
     paddingBottom: spacing.xxl,
     gap: spacing.md,
+  },
+  brandLogoWrap: {
+    alignItems: 'center',
+    marginTop: spacing.xs,
+    marginBottom: spacing.xxs,
   },
   card: {
     backgroundColor: colors.surfaceElevated,
@@ -694,8 +969,8 @@ const styles = StyleSheet.create({
   },
   privacyLinkWrap: {
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    marginTop: spacing.xs,
+    paddingVertical: spacing.xs,
+    marginTop: -spacing.sm,
   },
   privacyLink: {
     fontSize: 14,
@@ -705,6 +980,22 @@ const styles = StyleSheet.create({
   },
   protectButton: {
     ...naimButtons.primary,
+    marginBottom: spacing.sm,
+  },
+  loginOtherButton: {
+    marginBottom: spacing.sm,
+  },
+  createAccountButton: {
+    marginBottom: spacing.xs,
+  },
+  accountLoginHint: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: 13,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  accountLoginInput: {
     marginBottom: spacing.sm,
   },
   protectButtonText: {
@@ -721,13 +1012,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     color: colors.textSecondary,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
-  accountHintProtected: {
-    fontFamily: typography.fontFamily.regular,
-    fontSize: 13,
-    color: colors.primaryVariant,
     marginBottom: spacing.sm,
     textAlign: 'center',
   },

@@ -4,11 +4,12 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { NaimDialog } from '../components/NaimDialog';
+import { navigateToHome } from '../navigation/navigationRef';
 import {
   clearWantsLoginScreen,
   consumeWantsLoginScreen,
@@ -16,6 +17,8 @@ import {
   subscribeToAuthUrls,
   type AuthLinkNotice,
 } from '../services/authService';
+import { handleUserIdChanged } from '../services/identityTransitionService';
+
 type AuthSessionContextValue = {
   session: Session | null;
   booting: boolean;
@@ -34,6 +37,7 @@ export function AuthSessionProvider({ children }: { children: React.ReactNode })
   const [booting, setBooting] = useState(true);
   const [prefersLogin, setPrefersLogin] = useState(false);
   const [authLinkNotice, setAuthLinkNotice] = useState<AuthLinkNotice | null>(null);
+  const previousUserIdRef = useRef<string | null>(null);
 
   const clearAuthLinkNotice = useCallback(() => setAuthLinkNotice(null), []);
 
@@ -68,7 +72,10 @@ export function AuthSessionProvider({ children }: { children: React.ReactNode })
       try {
         const { data } = await supabase.auth.getSession();
         if (data.session) {
-          if (mounted) setSession(data.session);
+          if (mounted) {
+            previousUserIdRef.current = data.session.user.id;
+            setSession(data.session);
+          }
           return;
         }
 
@@ -89,7 +96,16 @@ export function AuthSessionProvider({ children }: { children: React.ReactNode })
     void bootstrap();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      const previousUserId = previousUserIdRef.current;
+      const nextUserId = nextSession?.user.id ?? null;
+
+      if (nextUserId && previousUserId !== nextUserId) {
+        void handleUserIdChanged(previousUserId, nextUserId);
+      }
+
+      previousUserIdRef.current = nextUserId;
       setSession(nextSession);
+
       if (nextSession) {
         setPrefersLogin(false);
         void clearWantsLoginScreen();
@@ -99,9 +115,14 @@ export function AuthSessionProvider({ children }: { children: React.ReactNode })
     const unsubscribeLinks = subscribeToAuthUrls(
       (notice) => {
         void refreshSession();
+        if (notice.kind === 'login' || notice.kind === undefined) {
+          navigateToHome();
+          setAuthLinkNotice(notice);
+          return;
+        }
         setAuthLinkNotice(notice);
       },
-      (message) => setAuthLinkNotice({ type: 'error', message })
+      (message) => setAuthLinkNotice({ type: 'error', message, kind: 'email_confirm' })
     );
 
     return () => {
@@ -134,22 +155,7 @@ export function AuthSessionProvider({ children }: { children: React.ReactNode })
     ]
   );
 
-  return (
-    <AuthSessionContext.Provider value={value}>
-      {children}
-      {authLinkNotice ? (
-        <NaimDialog
-          visible
-          title={authLinkNotice.type === 'success' ? 'Listo' : 'No pudimos confirmar'}
-          message={authLinkNotice.message}
-          tone={authLinkNotice.type === 'success' ? 'success' : 'info'}
-          primaryText="Entendido"
-          onPrimary={clearAuthLinkNotice}
-          onDismiss={clearAuthLinkNotice}
-        />
-      ) : null}
-    </AuthSessionContext.Provider>
-  );
+  return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>;
 }
 
 export function useAuthSession() {

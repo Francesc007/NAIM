@@ -14,15 +14,20 @@ import { LoginScreen } from '../screens/LoginScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { GarmentProvider } from '../context/GarmentContext';
 import { AuthSessionProvider, useAuthSession } from '../context/AuthSessionContext';
+import { NaimDialog } from '../components/NaimDialog';
 import { HomeHeader } from '../components/HomeHeader';
+import { NavBrandLogo } from '../components/NavBrandLogo';
 import { NavGradientBackground } from '../components/NavGradientBackground';
+import { navigationRef } from './navigationRef';
 import { colors, shadows, spacing, typography } from '../theme';
-import { useTabBarBottomInset } from '../hooks/useTabBarBottomInset';
+import { useTabBarLayout } from '../hooks/useTabBarBottomInset';
 import { supabase } from '../lib/supabase';
 import {
   hasCompletedOnboardingLocal,
   markOnboardingCompleted,
+  markProtectionNoticeSeen,
 } from '../services/authService';
+import { getProfileFromSupabase } from '../services/profileService';
 import type { RootStackParamList, TabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -38,6 +43,12 @@ const tabBarLabelStyle = {
   fontSize: 12,
   fontFamily: typography.fontFamily.regular,
   marginTop: 2,
+};
+
+const navLogoHeaderOptions = {
+  headerTitle: () => <NavBrandLogo />,
+  headerTitleAlign: 'center' as const,
+  headerTitleContainerStyle: { width: '100%', left: 0, right: 0 },
 };
 
 function RenderTabBarLabel({
@@ -61,14 +72,43 @@ function RenderTabBarLabel({
   );
 }
 
+function AuthLinkNoticeHost() {
+  const { authLinkNotice, clearAuthLinkNotice, session } = useAuthSession();
+
+  if (!authLinkNotice) return null;
+
+  const isEmailConfirm = authLinkNotice.kind === 'email_confirm';
+
+  return (
+    <NaimDialog
+      visible
+      title={
+        isEmailConfirm
+          ? 'Guardarropa protegido'
+          : authLinkNotice.type === 'success'
+            ? 'Listo'
+            : 'No pudimos confirmar'
+      }
+      message={authLinkNotice.message}
+      tone={authLinkNotice.type === 'success' ? 'success' : 'info'}
+      primaryText="Entendido"
+      onDismiss={() => {
+        if (isEmailConfirm && session?.user.id) {
+          void markProtectionNoticeSeen(session.user.id);
+        }
+        clearAuthLinkNotice();
+      }}
+    />
+  );
+}
+
 function AddTabScreen() {
   return <AddGarmentScreen hideBottomNav />;
 }
 
 function MainTabs() {
-  const bottomInset = useTabBarBottomInset();
+  const { paddingBottom: bottomInset, marginBottom: tabBarMarginBottom } = useTabBarLayout();
   const tabBarContentHeight = 56;
-  const androidLift = Platform.OS === 'android' ? spacing.xs : 0;
 
   return (
     <Tab.Navigator
@@ -77,10 +117,10 @@ function MainTabs() {
         tabBarInactiveTintColor: colors.primaryVariant,
         tabBarStyle: {
           ...styles.tabBar,
-          height: tabBarContentHeight + bottomInset + androidLift,
-          paddingBottom: bottomInset + androidLift,
+          height: tabBarContentHeight + bottomInset,
+          paddingBottom: bottomInset,
           paddingTop: spacing.xs,
-          marginBottom: Platform.OS === 'android' ? 2 : 0,
+          marginBottom: tabBarMarginBottom,
         },
         tabBarShowLabel: true,
         tabBarLabelStyle,
@@ -109,7 +149,7 @@ function MainTabs() {
         name="Add"
         component={AddTabScreen}
         options={{
-          title: 'Añadir Prenda',
+          ...navLogoHeaderOptions,
           headerShown: true,
           headerBackVisible: false,
           headerLeft: () => null,
@@ -125,7 +165,7 @@ function MainTabs() {
         name="Wardrobe"
         component={WardrobeScreen}
         options={{
-          title: 'Mi Colección',
+          ...navLogoHeaderOptions,
           tabBarLabel: ({ focused }) => (
             <RenderTabBarLabel focused={focused} label="Mi Colección" />
           ),
@@ -160,9 +200,8 @@ function RootStackNavigator() {
 
       try {
         const localDone = await hasCompletedOnboardingLocal();
-        const { data } = await supabase.auth.getUser();
-        const metadata = (data.user?.user_metadata ?? {}) as { onboarding_completed?: boolean };
-        const remoteDone = metadata.onboarding_completed === true;
+        const profile = await getProfileFromSupabase();
+        const remoteDone = profile.onboardingCompleted;
 
         if (!mounted) return;
 
@@ -225,7 +264,7 @@ function RootStackNavigator() {
         name="AddGarment"
         component={AddGarmentScreen}
         options={{
-          title: 'Añadir Prenda',
+          ...navLogoHeaderOptions,
           headerBackVisible: false,
           headerLeft: () => null,
         }}
@@ -234,7 +273,7 @@ function RootStackNavigator() {
         name="Suggestions"
         component={SuggestionsScreen}
         options={{
-          title: 'Sugerencias de Hoy',
+          ...navLogoHeaderOptions,
           headerBackVisible: false,
           headerLeft: () => null,
         }}
@@ -253,9 +292,10 @@ export function AppNavigator() {
   return (
     <AuthSessionProvider>
       <GarmentProvider>
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <RootStackNavigator />
         </NavigationContainer>
+        <AuthLinkNoticeHost />
       </GarmentProvider>
     </AuthSessionProvider>
   );

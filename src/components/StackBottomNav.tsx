@@ -1,17 +1,16 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useNavigationState } from '@react-navigation/native';
 import { colors, premiumGradient, shadows, spacing, typography } from '../theme';
-import { useTabBarBottomInset } from '../hooks/useTabBarBottomInset';
+import { useTabBarLayout } from '../hooks/useTabBarBottomInset';
 
 const TAB_BAR_CONTENT_HEIGHT = 56;
 
 export function StackBottomNav() {
   const navigation = useNavigation<any>();
-  const bottomInset = useTabBarBottomInset();
-  const androidLift = Platform.OS === 'android' ? spacing.xs : 0;
+  const { paddingBottom: bottomInset, marginBottom: tabBarMarginBottom } = useTabBarLayout();
 
   const activeTab = useNavigationState((state) => {
     const mainRoute = state.routes.find((r) => r.name === 'Main');
@@ -37,10 +36,10 @@ export function StackBottomNav() {
       style={[
         styles.wrapper,
         {
-          height: TAB_BAR_CONTENT_HEIGHT + bottomInset + androidLift,
-          paddingBottom: bottomInset + androidLift,
+          height: TAB_BAR_CONTENT_HEIGHT + bottomInset,
+          paddingBottom: bottomInset,
           paddingTop: spacing.xs,
-          marginBottom: Platform.OS === 'android' ? 2 : 0,
+          marginBottom: tabBarMarginBottom,
         },
       ]}
     >

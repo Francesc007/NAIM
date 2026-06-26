@@ -20,6 +20,83 @@ type ProfileMetadata = {
   onboarding_completed?: boolean;
 };
 
+type ProfileRow = {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+  avatar_storage_path: string | null;
+  avatar_updated_at: number | null;
+  style_preference: string | null;
+  climate_preference: string | null;
+  onboarding_completed: boolean;
+};
+
+function metadataToProfilePatch(metadata: ProfileMetadata): Partial<Omit<ProfileRow, 'id'>> {
+  return {
+    display_name: metadata.display_name?.trim() ?? '',
+    avatar_url: metadata.avatar_url?.trim() || null,
+    avatar_storage_path: metadata.avatar_storage_path?.trim() || null,
+    avatar_updated_at:
+      typeof metadata.avatar_updated_at === 'number' ? metadata.avatar_updated_at : null,
+    style_preference: metadata.style_preference?.trim() || null,
+    climate_preference: metadata.climate_preference?.trim() || null,
+    onboarding_completed: metadata.onboarding_completed === true,
+  };
+}
+
+async function fetchProfileRow(userId: string): Promise<ProfileRow | null> {
+  if (!supabase) throw new Error('Supabase no configurado');
+  const { data, error } = await supabase
+    .from('profiles')
+    .select(
+      'id, display_name, avatar_url, avatar_storage_path, avatar_updated_at, style_preference, climate_preference, onboarding_completed'
+    )
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Perfil: ${error.message}`);
+  return data as ProfileRow | null;
+}
+
+async function upsertProfileRow(userId: string, patch: Partial<Omit<ProfileRow, 'id'>>): Promise<void> {
+  if (!supabase) throw new Error('Supabase no configurado');
+  const { error } = await supabase.from('profiles').upsert(
+    {
+      id: userId,
+      ...patch,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'id' }
+  );
+  if (error) throw new Error(`Perfil: ${error.message}`);
+}
+
+async function ensureProfileRow(userId: string, metadata?: ProfileMetadata): Promise<ProfileRow> {
+  const existing = await fetchProfileRow(userId);
+  if (existing) return existing;
+
+  const backfill = metadata ? metadataToProfilePatch(metadata) : {};
+  await upsertProfileRow(userId, backfill);
+
+  const created = await fetchProfileRow(userId);
+  if (!created) throw new Error('No se pudo crear el perfil.');
+  return created;
+}
+
+function resolveAvatarUrlFromRow(row: ProfileRow): string {
+  let avatarUrl = row.avatar_url?.trim() ?? '';
+  if (!avatarUrl && row.avatar_storage_path && supabase) {
+    const { data } = supabase.storage
+      .from(PROFILE_BUCKET)
+      .getPublicUrl(row.avatar_storage_path);
+    avatarUrl = data.publicUrl;
+  }
+  if (avatarUrl && row.avatar_updated_at && !avatarUrl.includes('?v=')) {
+    avatarUrl = withVersionQuery(avatarUrl, row.avatar_updated_at);
+  }
+  return avatarUrl;
+}
+
 /** Redimensiona y comprime a JPEG — óptimo para avatares pequeños en Storage. */
 async function prepareAvatarForUpload(localUri: string): Promise<string> {
   try {
@@ -93,6 +170,10 @@ export async function getProfileFromSupabase(): Promise<{
   userId: string;
   displayName: string;
   avatarUrl: string;
+  avatarStoragePath: string | null;
+  stylePreference: string;
+  climatePreference: string;
+  onboardingCompleted: boolean;
   email: string | null;
   isAnonymous: boolean;
   emailConfirmed: boolean;
@@ -107,24 +188,20 @@ export async function getProfileFromSupabase(): Promise<{
   if (!user) throw new Error('Usuario no autenticado');
 
   const metadata = (user.user_metadata ?? {}) as ProfileMetadata;
-  let avatarUrl = metadata.avatar_url ?? '';
-  if (!avatarUrl && metadata.avatar_storage_path && supabase) {
-    const { data } = supabase.storage
-      .from(PROFILE_BUCKET)
-      .getPublicUrl(metadata.avatar_storage_path);
-    avatarUrl = data.publicUrl;
-  }
-  if (avatarUrl && metadata.avatar_updated_at && !avatarUrl.includes('?v=')) {
-    avatarUrl = withVersionQuery(avatarUrl, metadata.avatar_updated_at);
-  }
+  const row = await ensureProfileRow(user.id, metadata);
+  const avatarUrl = resolveAvatarUrlFromRow(row);
 
   const email = user.email ?? null;
   const isAnonymous = user.is_anonymous === true || !email;
 
   return {
     userId: user.id,
-    displayName: metadata.display_name ?? '',
+    displayName: row.display_name ?? '',
     avatarUrl,
+    avatarStoragePath: row.avatar_storage_path,
+    stylePreference: row.style_preference ?? '',
+    climatePreference: row.climate_preference ?? '',
+    onboardingCompleted: row.onboarding_completed === true,
     email,
     isAnonymous,
     emailConfirmed: Boolean(email && user.email_confirmed_at),
@@ -142,7 +219,7 @@ export function mapLinkEmailError(message: string): string {
     msg.includes('email address is already registered') ||
     msg.includes('already exists')
   ) {
-    return 'Este correo ya está en uso en otra cuenta NAIM. Si es tuyo, cierra sesión e inicia con el enlace mágico en la pantalla de acceso. Si eliminaste esa cuenta hace poco, espera unos minutos o usa otro correo.';
+    return 'Este correo ya está en uso en otra cuenta NAIM. Si es tuyo, inicia sesión con tu correo y contraseña.';
   }
 
   if (msg.includes('same email') || msg.includes('already confirmed')) {
@@ -160,18 +237,70 @@ export function mapLinkEmailError(message: string): string {
   return message.replace(/^vincular correo:\s*/i, '').trim();
 }
 
-export async function linkAnonymousAccount(email: string): Promise<void> {
+export async function linkAnonymousAccount(
+  email: string,
+  password?: string
+): Promise<{ email: string; emailConfirmed: boolean }> {
   if (!supabase) throw new Error('Supabase no configurado');
   const normalized = normalizeEmail(email);
   if (!isValidEmail(normalized)) {
     throw new Error('Introduce un correo electrónico válido.');
   }
+  if (password !== undefined && password.length < 6) {
+    throw new Error('La contraseña debe tener al menos 6 caracteres.');
+  }
 
   const { error } = await supabase.auth.updateUser({
     email: normalized,
+    ...(password ? { password } : {}),
     options: { emailRedirectTo: getAuthRedirectUrl() },
   });
   if (error) throw new Error(mapLinkEmailError(error.message));
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError) throw new Error(`Auth: ${userError.message}`);
+
+  return {
+    email: user?.email ?? normalized,
+    emailConfirmed: Boolean(user?.email && user.email_confirmed_at),
+  };
+}
+
+function mapSignInError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
+    return 'Correo o contraseña incorrectos.';
+  }
+  if (lower.includes('email not confirmed')) {
+    return 'Confirma tu correo en Supabase o desactiva la confirmación obligatoria en el panel de Auth.';
+  }
+  if (lower.includes('user not found')) {
+    return 'Este correo no tiene cuenta NAIM. Usa Crear cuenta para empezar.';
+  }
+  return message;
+}
+
+/** Inicio de sesión inmediato con correo y contraseña. */
+export async function signInWithEmailPassword(email: string, password: string): Promise<Session> {
+  if (!supabase) throw new Error('Supabase no configurado');
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) {
+    throw new Error('Introduce un correo electrónico válido.');
+  }
+  if (!password.trim()) {
+    throw new Error('Introduce tu contraseña.');
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: normalized,
+    password,
+  });
+  if (error) throw new Error(mapSignInError(error.message));
+  if (!data.session) throw new Error('No se pudo iniciar sesión.');
+  return data.session;
 }
 
 function mapMagicLinkError(message: string): string {
@@ -179,31 +308,34 @@ function mapMagicLinkError(message: string): string {
     return 'No pudimos registrar ese correo. Activa los registros por email en Supabase o usa Continuar con NAIM para empezar.';
   }
   if (message.includes('User not found')) {
-    return 'Este correo no está vinculado a una cuenta. Protégelo primero en Ajustes o usa Continuar con NAIM.';
+    return 'Este correo no tiene cuenta NAIM. Usa Crear cuenta para empezar.';
   }
   return message;
 }
 
-/** Envía magic link OTP al correo para recuperar o crear acceso. */
-export async function signInWithMagicLink(email: string): Promise<void> {
+/** Envía magic link OTP al correo para iniciar sesión en cuenta existente. */
+export async function signInWithMagicLink(
+  email: string,
+  options?: { shouldCreateUser?: boolean }
+): Promise<void> {
   if (!supabase) throw new Error('Supabase no configurado');
   const normalized = normalizeEmail(email);
   if (!isValidEmail(normalized)) {
     throw new Error('Introduce un correo electrónico válido.');
   }
 
+  const shouldCreateUser = options?.shouldCreateUser ?? false;
+
   const { error } = await supabase.auth.signInWithOtp({
     email: normalized,
     options: {
       emailRedirectTo: getAuthRedirectUrl(),
-      shouldCreateUser: true,
+      shouldCreateUser,
     },
   });
   if (!error) return;
 
-  // Fallback cuando Supabase tiene desactivado signup por OTP:
-  // creamos sesión anónima y vinculamos el correo al mismo user_id.
-  if (error.message.includes('Signups not allowed')) {
+  if (error.message.includes('Signups not allowed') && shouldCreateUser) {
     await createAnonymousSession();
     await linkAnonymousAccount(normalized);
     return;
@@ -214,11 +346,15 @@ export async function signInWithMagicLink(email: string): Promise<void> {
 
 export async function updateProfileName(displayName: string): Promise<void> {
   if (!supabase) throw new Error('Supabase no configurado');
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError) throw new Error(`Auth: ${authError.message}`);
+  if (!user) throw new Error('Usuario no autenticado');
+
   const trimmed = displayName.trim();
-  const { error } = await supabase.auth.updateUser({
-    data: { display_name: trimmed || null },
-  });
-  if (error) throw new Error(`Actualizar nombre: ${error.message}`);
+  await upsertProfileRow(user.id, { display_name: trimmed });
 }
 
 export async function saveOnboardingProfile(input: {
@@ -231,15 +367,19 @@ export async function saveOnboardingProfile(input: {
   const trimmedName = input.name.trim();
   if (!trimmedName) throw new Error('El nombre es obligatorio para continuar.');
 
-  const { error } = await supabase.auth.updateUser({
-    data: {
-      display_name: trimmedName,
-      style_preference: input.stylePreference,
-      climate_preference: input.climatePreference,
-      onboarding_completed: true,
-    },
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError) throw new Error(`Auth: ${authError.message}`);
+  if (!user) throw new Error('Usuario no autenticado');
+
+  await upsertProfileRow(user.id, {
+    display_name: trimmedName,
+    style_preference: input.stylePreference,
+    climate_preference: input.climatePreference,
+    onboarding_completed: true,
   });
-  if (error) throw new Error(`Onboarding: ${error.message}`);
 }
 
 async function removeAllAvatars(userId: string): Promise<void> {
@@ -264,10 +404,11 @@ export async function removeProfileImage(): Promise<void> {
 
   await removeAllAvatars(user.id);
 
-  const { error } = await supabase.auth.updateUser({
-    data: { avatar_url: null, avatar_updated_at: null },
+  await upsertProfileRow(user.id, {
+    avatar_url: null,
+    avatar_storage_path: null,
+    avatar_updated_at: null,
   });
-  if (error) throw new Error(`Quitar foto: ${error.message}`);
 }
 
 export async function uploadProfileImage(localUri: string): Promise<string> {
@@ -296,14 +437,11 @@ export async function uploadProfileImage(localUri: string): Promise<string> {
   const { data } = supabase.storage.from(PROFILE_BUCKET).getPublicUrl(storagePath);
   const avatarUrl = withVersionQuery(data.publicUrl, version);
 
-  const { error: userUpdateError } = await supabase.auth.updateUser({
-    data: {
-      avatar_url: avatarUrl,
-      avatar_storage_path: storagePath,
-      avatar_updated_at: version,
-    },
+  await upsertProfileRow(user.id, {
+    avatar_url: avatarUrl,
+    avatar_storage_path: storagePath,
+    avatar_updated_at: version,
   });
-  if (userUpdateError) throw new Error(`Actualizar perfil: ${userUpdateError.message}`);
 
   return avatarUrl;
 }

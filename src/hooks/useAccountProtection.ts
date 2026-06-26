@@ -4,6 +4,7 @@ import {
   needsSyncRecommendation,
   type AccountProtectionProfile,
 } from '../services/accountProtectionService';
+import { hasWardrobeDataForCurrentUser } from '../services/identityTransitionService';
 import { getProfileFromSupabase } from '../services/profileService';
 
 const EMPTY_PROFILE: AccountProtectionProfile = {
@@ -14,6 +15,7 @@ const EMPTY_PROFILE: AccountProtectionProfile = {
 
 export function useAccountProtection() {
   const [profile, setProfile] = useState<AccountProtectionProfile>(EMPTY_PROFILE);
+  const [hasWardrobeData, setHasWardrobeData] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -25,8 +27,10 @@ export function useAccountProtection() {
         emailConfirmed: remote.emailConfirmed,
         isAnonymous: remote.isAnonymous,
       });
+      setHasWardrobeData(await hasWardrobeDataForCurrentUser());
     } catch {
       setProfile(EMPTY_PROFILE);
+      setHasWardrobeData(false);
     } finally {
       setLoading(false);
     }
@@ -39,6 +43,7 @@ export function useAccountProtection() {
   return {
     loading,
     profile,
+    hasWardrobeData,
     refresh,
     isProtected: isAccountDataProtected(profile),
     needsSync: needsSyncRecommendation(profile),

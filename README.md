@@ -111,9 +111,12 @@ Escanea el QR con la **app NAIM instalada**, no con Expo Go.
 ## Supabase (backend)
 
 1. Habilita **Anonymous sign-ins** en Authentication → Providers
-2. Ejecuta las migraciones en SQL Editor:
+2. Ejecuta las migraciones en SQL Editor (en orden):
    - `supabase/migrations/001_items_rls.sql`
    - `supabase/migrations/002_storage_garment_images.sql`
+   - `supabase/migrations/003_delete_my_account.sql`
+   - `supabase/migrations/004_profiles.sql`
+   - `supabase/migrations/005_profiles_cascade_and_account_purge.sql`
 
 ## Build de producción (EAS)
 

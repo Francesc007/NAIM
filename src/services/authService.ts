@@ -7,6 +7,7 @@ const WANTS_LOGIN_KEY = '@naim_wants_login';
 const ONBOARDING_DONE_KEY = '@naim_onboarding_completed';
 const STYLE_PREF_KEY = '@naim_style_preference';
 const CLIMATE_PREF_KEY = '@naim_climate_preference';
+const PROTECTION_NOTICE_PREFIX = '@naim_protection_notice_shown:';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_TYPES = new Set<string>([
@@ -21,6 +22,7 @@ const OTP_TYPES = new Set<string>([
 export type AuthLinkNotice = {
   type: 'success' | 'error';
   message: string;
+  kind?: 'email_confirm' | 'login';
 };
 
 export function normalizeEmail(email: string): string {
@@ -83,6 +85,16 @@ export async function saveOnboardingPreferences(style: string, climate: string):
     [STYLE_PREF_KEY, style],
     [CLIMATE_PREF_KEY, climate],
   ]);
+}
+
+export async function hasSeenProtectionNotice(userId: string): Promise<boolean> {
+  if (!userId) return false;
+  return (await AsyncStorage.getItem(`${PROTECTION_NOTICE_PREFIX}${userId}`)) === '1';
+}
+
+export async function markProtectionNoticeSeen(userId: string): Promise<void> {
+  if (!userId) return;
+  await AsyncStorage.setItem(`${PROTECTION_NOTICE_PREFIX}${userId}`, '1');
 }
 
 function decodeParam(value: string): string {
@@ -154,11 +166,13 @@ export async function createSessionFromAuthUrl(url: string): Promise<AuthLinkNot
     if (params.type === 'email_change' || params.type === 'email') {
       return {
         type: 'success',
-        message: 'Correo confirmado. Tu guardarropa queda protegido en esta cuenta.',
+        kind: 'email_confirm',
+        message: 'Correo confirmado. Tu guardarropa queda protegido.',
       };
     }
     return {
       type: 'success',
+      kind: 'login',
       message: 'Acceso confirmado. Bienvenido de nuevo a NAIM.',
     };
   }
@@ -175,8 +189,9 @@ export async function createSessionFromAuthUrl(url: string): Promise<AuthLinkNot
     const isEmailFlow = params.type === 'email_change' || params.type === 'email';
     return {
       type: 'success',
+      kind: isEmailFlow ? 'email_confirm' : 'login',
       message: isEmailFlow
-        ? 'Correo confirmado. Tu guardarropa queda protegido en esta cuenta.'
+        ? 'Correo confirmado. Tu guardarropa queda protegido.'
         : 'Acceso confirmado. Bienvenido de nuevo a NAIM.',
     };
   }
@@ -186,6 +201,7 @@ export async function createSessionFromAuthUrl(url: string): Promise<AuthLinkNot
     if (error) throw new Error(mapAuthCallbackError(error.message));
     return {
       type: 'success',
+      kind: 'login',
       message: 'Acceso confirmado. Bienvenido de nuevo a NAIM.',
     };
   }
@@ -202,7 +218,7 @@ export function subscribeToAuthUrls(
     void createSessionFromAuthUrl(url)
       .then((notice) => {
         if (notice) onSuccess(notice);
-        else onSuccess({ type: 'success', message: 'Sesión actualizada correctamente.' });
+        else onSuccess({ type: 'success', kind: 'login', message: 'Sesión actualizada correctamente.' });
       })
       .catch((err) => {
         onError(err instanceof Error ? err.message : 'No se pudo completar el acceso.');

@@ -7,7 +7,6 @@ import {
   Modal,
   Animated,
   Pressable,
-  useWindowDimensions,
   ActivityIndicator,
   Image,
 } from 'react-native';
@@ -16,7 +15,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useWeather } from '../context/WeatherContext';
 import { useUser, getUserInitial } from '../context/UserContext';
 import { colors, naimButtons, radius, spacing, typography } from '../theme';
-import { APP_NAME } from '../constants/mockData';
+
+const NAIM_LOGO = require('../../assets/naim1.png');
 
 /** Iconos estilo Google Weather — emojis coloridos */
 const WEATHER_EMOJIS: Record<string, string> = {
@@ -46,7 +46,6 @@ const WEATHER_MODAL_GRADIENT = ['#FFFFFF', '#F7EBE2', '#EFD9C8', '#DDBEA9'] as c
 export function HomeHeader() {
   const navigation = useNavigation();
   const { userName, avatarUrl, avatarDisplayUrl } = useUser();
-  const { width } = useWindowDimensions();
   const { greeting, temp, icon, loading, locationError, apiError } = useWeather();
   const [modalVisible, setModalVisible] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -55,7 +54,6 @@ export function HomeHeader() {
   const rotateLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
-  const titleSize = Math.min(30, Math.max(22, Math.floor(width * 0.07) + 2));
   const weatherEmoji = icon ? (WEATHER_EMOJIS[icon] ?? '🌡️') : '🌡️';
   const isSunIcon = icon === '01d';
   const rotation = rotateAnim.interpolate({
@@ -157,10 +155,7 @@ export function HomeHeader() {
           </TouchableOpacity>
         </View>
         <View style={styles.centerColumn} pointerEvents="box-none">
-          <Text style={[styles.title, { fontSize: titleSize, lineHeight: titleSize * 1.25 }]} allowFontScaling={false}>
-            {APP_NAME}
-          </Text>
-          <Text style={styles.subtitle}>Tu Estilo Inteligente</Text>
+          <Image source={NAIM_LOGO} style={styles.brandLogo} resizeMode="contain" />
         </View>
         <View style={styles.rightColumn} pointerEvents="box-none">
           {loading ? (
@@ -245,7 +240,7 @@ const styles = StyleSheet.create({
     flexWrap: 'nowrap',
     alignItems: 'center',
     paddingHorizontal: 16,
-    minHeight: 56,
+    minHeight: 104,
     position: 'relative',
   },
   leftColumn: {
@@ -265,19 +260,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 56,
   },
-  title: {
-    fontFamily: typography.fontFamily.vogue,
-    letterSpacing: 3,
-    color: colors.text,
-    includeFontPadding: false,
-  },
-  subtitle: {
-    fontFamily: typography.fontFamily.vogue,
-    fontSize: 13,
-    letterSpacing: 1.5,
-    color: colors.text,
-    marginTop: 2,
-    opacity: 0.9,
+  brandLogo: {
+    width: 100,
+    height: 100,
+    borderRadius: radius.md,
   },
   rightColumn: {
     marginLeft: 'auto',

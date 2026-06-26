@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { saveImageForGarment } from '../utils/platformStorage';
 import { useGarments } from '../context/GarmentContext';
 import { Garment } from '../types/garment';
@@ -21,13 +21,11 @@ import { GARMENT_TYPES, OCCASIONS, SEASONS } from '../config/categories';
 import { colors, radius, shadows, spacing, subtleBrightBorder, typography } from '../theme';
 import { ExpandableSelector } from '../components/ExpandableSelector';
 import { ClassificationTags } from '../components/ClassificationTags';
-import { PrivacyConsentModal } from '../components/PrivacyConsentModal';
 import { SyncAccountHint } from '../components/SyncAccountHint';
 import { StackBottomNav } from '../components/StackBottomNav';
 import { Skeleton } from '../components/ui/Skeleton';
 import { LoadingOverlay } from '../components/ui/LoadingOverlay';
 import { classifyImage } from '../services/aiClassificationService';
-import { usePrivacyConsent } from '../hooks/usePrivacyConsent';
 import { useAccountProtection } from '../hooks/useAccountProtection';
 import { v4 as uuid } from 'uuid';
 
@@ -38,9 +36,7 @@ interface AddGarmentScreenProps {
 export function AddGarmentScreen({ hideBottomNav = false }: AddGarmentScreenProps) {
   const navigation = useNavigation();
   const { addGarment } = useGarments();
-  const { hasConsent, acceptConsent, loading: consentLoading } = usePrivacyConsent();
-  const { needsSync, loading: protectionLoading } = useAccountProtection();
-  const [showConsentModal, setShowConsentModal] = useState(false);
+  const { needsSync, loading: protectionLoading, refresh: refreshProtection } = useAccountProtection();
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [category, setCategory] = useState<string>(GARMENT_TYPES[0]);
@@ -108,19 +104,14 @@ export function AddGarmentScreen({ hideBottomNav = false }: AddGarmentScreenProp
   }, [runClassification]);
 
   const pickImage = useCallback(async () => {
-    if (consentLoading) return;
-    if (!hasConsent) {
-      setShowConsentModal(true);
-      return;
-    }
     await launchImagePicker();
-  }, [consentLoading, hasConsent, launchImagePicker]);
+  }, [launchImagePicker]);
 
-  const handleAcceptConsent = useCallback(async () => {
-    await acceptConsent();
-    setShowConsentModal(false);
-    await launchImagePicker();
-  }, [acceptConsent, launchImagePicker]);
+  useFocusEffect(
+    useCallback(() => {
+      void refreshProtection();
+    }, [refreshProtection])
+  );
 
   const openSettings = useCallback(() => {
     const parentNavigation = navigation.getParent();
@@ -279,11 +270,6 @@ export function AddGarmentScreen({ hideBottomNav = false }: AddGarmentScreenProp
         )}
       </KeyboardAvoidingView>
 
-      <PrivacyConsentModal
-        visible={showConsentModal}
-        onAccept={handleAcceptConsent}
-        onDecline={() => setShowConsentModal(false)}
-      />
       <LoadingOverlay visible={saving} message="Subiendo imagen y guardando tu prenda..." />
 
       {!hideBottomNav && <StackBottomNav />}
